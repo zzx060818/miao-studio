@@ -1,0 +1,17 @@
+export const LIMITS = {
+  maxPrompt: 2000,
+  maxNegative: 500,
+  maxStyles: 3,
+  maxCount: 4,
+  maxRefs: 4,
+  maxRefBytes: 4 * 1024 * 1024,
+  maxEdge: 4096,
+  maxWorks: 40,
+  maxPrompts: 100,
+  maxJsonChars: 12_000_000,
+  maxProviderJsonChars: 30_000_000,
+  maxResultBytes: 8 * 1024 * 1024,
+  requestsPerMinute: 8,
+  globalPerMinute: 30,
+  windowMs: 60_000,
+} as const;
