@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { CheckMark } from "./cat-mark";
+import { ProviderSetup } from "./provider-setup";
 import { ViewerDialog, type ViewerData } from "./viewer-dialog";
 import {
   listExampleStars,
@@ -33,8 +34,8 @@ import { readReferenceFile } from "@/lib/read-image";
 
 type ServiceStatus =
   | { kind: "loading" }
-  | { kind: "unconfigured"; detail: string }
-  | { kind: "configured"; model: string; detail: string; caps: PublicCaps }
+  | { kind: "unconfigured"; detail: string; editable: boolean }
+  | { kind: "configured"; model: string; detail: string; caps: PublicCaps; editable: boolean }
   | { kind: "unknown" };
 
 type ActionNote = { tone: "info" | "error"; title: string; detail?: string } | null;
@@ -88,6 +89,7 @@ export function StudioDesk() {
   const [mode, setMode] = useState<"create" | "saved">("create");
   const [advanced, setAdvanced] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [refError, setRefError] = useState("");
   const [works, setWorks] = useState<WorkRecord[]>([]);
@@ -116,34 +118,40 @@ export function StudioDesk() {
     writeDraft(draft);
   }, [draft, hydrated]);
 
-  useEffect(() => {
-    let ignore = false;
+  const loadStatus = useCallback((alive: { current: boolean } = { current: true }) => {
     fetch("/api/provider", { cache: "no-store" })
       .then((response) => response.json())
-      .then((json: { configured?: boolean; model?: string; detail?: string; capabilities?: PublicCaps }) => {
-        if (ignore) return;
+      .then((json: { configured?: boolean; editable?: boolean; model?: string; detail?: string; capabilities?: PublicCaps }) => {
+        if (!alive.current) return;
         if (json.configured && json.model && json.capabilities) {
           setStatus({
             kind: "configured",
             model: json.model,
             detail: json.detail ?? "生图服务已配置。",
             caps: json.capabilities,
+            editable: json.editable === true,
           });
           setDraft((current) => ({ ...current, modelId: json.model ?? current.modelId }));
           return;
         }
         setStatus({
           kind: "unconfigured",
+          editable: json.editable === true,
           detail: json.detail ?? "服务器还没有配置生图服务。",
         });
       })
       .catch(() => {
-        if (!ignore) setStatus({ kind: "unknown" });
+        if (alive.current) setStatus({ kind: "unknown" });
       });
-    return () => {
-      ignore = true;
-    };
   }, []);
+
+  useEffect(() => {
+    const alive = { current: true };
+    loadStatus(alive);
+    return () => {
+      alive.current = false;
+    };
+  }, [loadStatus]);
 
   useEffect(() => {
     if (!hydrated || status.kind === "loading" || !pendingAuto.current) return;
@@ -836,6 +844,15 @@ export function StudioDesk() {
                   ) : null}
                 </div>
 
+                {status.kind === "unconfigured" && status.editable ? <ProviderSetup onSaved={() => loadStatus()} /> : null}
+                {status.kind === "configured" && status.editable && setupOpen ? (
+                  <ProviderSetup
+                    onSaved={() => {
+                      setSetupOpen(false);
+                      loadStatus();
+                    }}
+                  />
+                ) : null}
                 {action ? (
                   <div className={action.tone === "error" ? "alert bad" : "alert"} role="alert">
                     <strong>{action.title}</strong>
@@ -852,6 +869,11 @@ export function StudioDesk() {
                 </button>
                 <p className="service-line" role="status">
                   {serviceLine}
+                  {status.kind === "configured" && status.editable ? (
+                    <button type="button" className="text-btn" onClick={() => setSetupOpen((open) => !open)}>
+                      {setupOpen ? "收起配置" : "更换生图服务"}
+                    </button>
+                  ) : null}
                 </p>
               </>
             ) : (
@@ -1025,9 +1047,10 @@ function resultMeta(result: ResultView): string {
 
 function serviceCopy(status: ServiceStatus): string {
   if (status.kind === "loading") return "正在确认生图服务…";
-  if (status.kind === "configured") return "生图服务已配置。密钥只留在服务器上。";
+  if (status.kind === "configured") return "生图服务已配置。密钥只留在这台电脑上。";
   if (status.kind === "unknown") return "没能确认生图服务状态。提交时以服务器的回答为准。";
-  return "尚未配置生图服务。可以先写提示和调参数，现在按生成会明确失败，也不会向你要密钥。";
+  if (status.kind === "unconfigured" && status.editable) return "还没接入生图服务。先在上面保存接口地址、密钥和模型。";
+  return "尚未配置生图服务。可以先写提示和调参数，现在按生成会明确失败。";
 }
 
 function extensionFor(mime: string): string {

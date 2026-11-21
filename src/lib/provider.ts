@@ -87,25 +87,29 @@ export function resolveConfigCaps(config: ProviderConfig): Caps {
   return caps;
 }
 
-export function publicStatus(env: EnvLike): Record<string, unknown> {
+export function publicStatus(env: EnvLike, options?: { editable?: boolean }): Record<string, unknown> {
+  const editable = options?.editable ?? false;
   const config = readProviderConfig(env);
   if (!config.configured || !config.model) {
     return {
       configured: false,
+      editable,
       message: "尚未配置生图服务",
       model: null,
       capabilities: null,
-      detail:
-        "服务器还没有同时配置 IMAGE_API_BASE_URL、IMAGE_API_KEY 和 IMAGE_API_MODEL。可以先写提示、存句子、看示例。提交时不会出图，也不会请你把密钥贴进网页。",
+      detail: editable
+        ? "在这页填上接口地址、密钥和模型。密钥只留在这台电脑上，页面不会再把它显示出来。"
+        : "服务器还没有同时配置 IMAGE_API_BASE_URL、IMAGE_API_KEY 和 IMAGE_API_MODEL。可以先写提示、存句子、看示例。",
     };
   }
   const caps = toPublicCaps(resolveConfigCaps(config), modelNote(config.model));
   return {
     configured: true,
+    editable,
     message: "生图服务已配置",
     model: config.model,
     capabilities: caps,
-    detail: "密钥只留在服务器上。风格会写进提示词，不是供应商的独立参数。",
+    detail: "密钥只留在这台电脑上。风格会写进提示词，不是供应商的独立参数。",
   };
 }
 
@@ -146,7 +150,7 @@ export async function handleGenerate(input: unknown, deps: GenerateDeps): Promis
         code: "unconfigured",
         error: "尚未配置生图服务",
         detail:
-          "服务器环境还没有 IMAGE_API_BASE_URL、IMAGE_API_KEY 和 IMAGE_API_MODEL。这次没有生成图片，也没有把请求发到外部服务。请在服务器配置这三项，不要把密钥交给浏览器。",
+          "还没有接口地址、密钥和模型。可以在页面上配置，或在服务器设置 IMAGE_API_BASE_URL、IMAGE_API_KEY 和 IMAGE_API_MODEL。这次没有生成图片。",
       },
     };
   }

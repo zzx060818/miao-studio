@@ -449,6 +449,32 @@ select:disabled { opacity: 1; }
 .generate:hover { transform: translate(1px, 1px); box-shadow: 4px 4px 0 var(--ink); }
 .generate:active { transform: translate(5px, 5px); box-shadow: 0 0 0 var(--ink); }
 .service-line { margin: 8px 0 0; text-align: center; color: var(--muted); font-size: 12px; }
+.service-line .text-btn { margin-left: 8px; }
+.setup-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  border: 2px solid var(--ink);
+  background: #fff8df;
+  box-shadow: 4px 4px 0 var(--ink);
+  padding: 12px;
+}
+.setup-card p { margin: 0; color: var(--muted); font-size: 12px; }
+.setup-card label { display: grid; gap: 4px; font-size: 13px; min-width: 0; }
+.setup-card input, .setup-card select {
+  width: 100%;
+  min-width: 0;
+  border: 2px solid var(--ink);
+  background: white;
+  padding: 8px;
+}
+.setup-save {
+  border: 2px solid var(--ink);
+  background: var(--purple);
+  color: white;
+  box-shadow: 3px 3px 0 var(--ink);
+  min-height: 40px;
+}
 
 .inspire-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .inspire-card {

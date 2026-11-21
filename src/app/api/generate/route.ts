@@ -1,4 +1,5 @@
 import { handleGenerate } from "@/lib/provider";
+import { mergeProviderEnv, readSavedProvider } from "@/lib/provider-store";
 import type { Buckets } from "@/lib/rate-limit";
 import { clientIp, parseJsonLimited } from "@/lib/validation";
 
@@ -13,8 +14,9 @@ export async function POST(request: Request) {
   if (!parsed.ok) {
     return Response.json({ ok: false, code: "invalid", error: parsed.error }, { status: parsed.status });
   }
+  const saved = await readSavedProvider();
   const result = await handleGenerate(parsed.value, {
-    env: process.env,
+    env: mergeProviderEnv(process.env, saved),
     ip: clientIp(request.headers),
     buckets,
     signal: request.signal,
