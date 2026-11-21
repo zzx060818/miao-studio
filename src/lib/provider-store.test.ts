@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   clearSavedProvider,
   envLocksProvider,
+  listProviderModels,
   mergeProviderEnv,
   parseProviderSetup,
   readSavedProvider,
@@ -33,11 +34,12 @@ describe("provider setup", () => {
 
   it("rejects missing, local, and malformed settings", () => {
     expect(parseProviderSetup({ baseUrl: "http://api.openai.com/v1", apiKey: SECRET, model: "gpt-image-1" }).ok).toBe(false);
-    expect(parseProviderSetup({ baseUrl: "https://127.0.0.1/v1", apiKey: SECRET, model: "gpt-image-1" }).ok).toBe(false);
+    expect(parseProviderSetup({ baseUrl: "https://169.254.169.254/latest", apiKey: SECRET, model: "gpt-image-1" }).ok).toBe(false);
     expect(parseProviderSetup({ baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-image-1" }).ok).toBe(false);
     expect(parseProviderSetup({ baseUrl: "https://api.openai.com/v1", apiKey: "short", model: "gpt-image-1" }).ok).toBe(false);
     expect(parseProviderSetup({ baseUrl: "https://api.openai.com/v1", apiKey: `${SECRET} tail`, model: "gpt-image-1" }).ok).toBe(false);
     expect(parseProviderSetup({ baseUrl: "https://api.openai.com/v1", apiKey: SECRET, model: "模型" }).ok).toBe(false);
+    expect(parseProviderSetup({ baseUrl: "https://10.0.0.8:8000/v1", apiKey: SECRET, model: "vendor/flux" }).ok).toBe(true);
   });
 
   it("lets a complete environment win over the page file", () => {
@@ -66,5 +68,20 @@ describe("provider setup", () => {
     expect(await readSavedProvider(file)).toEqual(value);
     await clearSavedProvider(file);
     expect(await readSavedProvider(file)).toBeNull();
+  });
+
+  it("reads model ids from an OpenAI-compatible list and does not return the key", async () => {
+    const fetchImpl = async (_url: string | URL | Request, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${SECRET}`);
+      return Response.json({ data: [{ id: "gpt-image-1" }, { id: "vendor/flux" }, { id: "跳过" }] });
+    };
+    const listed = await listProviderModels(
+      { baseUrl: "https://api.example.com/v1", apiKey: SECRET },
+      { fetchImpl, lookup: async () => ["10.1.2.3"] },
+    );
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.models).toEqual(["gpt-image-1", "vendor/flux"]);
+    expect(JSON.stringify(listed)).not.toContain(SECRET);
   });
 });

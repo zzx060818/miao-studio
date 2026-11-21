@@ -35,7 +35,7 @@ import { readReferenceFile } from "@/lib/read-image";
 type ServiceStatus =
   | { kind: "loading" }
   | { kind: "unconfigured"; detail: string; editable: boolean }
-  | { kind: "configured"; model: string; detail: string; caps: PublicCaps; editable: boolean }
+  | { kind: "configured"; model: string; detail: string; caps: PublicCaps; editable: boolean; baseUrl: string }
   | { kind: "unknown" };
 
 type ActionNote = { tone: "info" | "error"; title: string; detail?: string } | null;
@@ -121,7 +121,7 @@ export function StudioDesk() {
   const loadStatus = useCallback((alive: { current: boolean } = { current: true }) => {
     fetch("/api/provider", { cache: "no-store" })
       .then((response) => response.json())
-      .then((json: { configured?: boolean; editable?: boolean; model?: string; detail?: string; capabilities?: PublicCaps }) => {
+      .then((json: { configured?: boolean; editable?: boolean; model?: string; detail?: string; baseUrl?: string; capabilities?: PublicCaps }) => {
         if (!alive.current) return;
         if (json.configured && json.model && json.capabilities) {
           setStatus({
@@ -130,6 +130,7 @@ export function StudioDesk() {
             detail: json.detail ?? "生图服务已配置。",
             caps: json.capabilities,
             editable: json.editable === true,
+            baseUrl: json.baseUrl ?? "",
           });
           setDraft((current) => ({ ...current, modelId: json.model ?? current.modelId }));
           return;
@@ -738,7 +739,7 @@ export function StudioDesk() {
                     <select value={draft.aspect} onChange={(event) => patch({ aspect: event.target.value as AspectId })}>
                       {(activeCaps.aspects.length > 0 ? activeCaps.aspects : ASPECTS.map((item) => ({ ...item, size: "" }))).map((aspect) => (
                         <option key={aspect.id} value={aspect.id}>
-                          {aspect.label}
+                          {aspect.size ? `${aspect.label} · ${aspect.size.replace("x", "×")}` : aspect.label}
                         </option>
                       ))}
                     </select>
@@ -847,6 +848,9 @@ export function StudioDesk() {
                 {status.kind === "unconfigured" && status.editable ? <ProviderSetup onSaved={() => loadStatus()} /> : null}
                 {status.kind === "configured" && status.editable && setupOpen ? (
                   <ProviderSetup
+                    initialBaseUrl={status.baseUrl || "https://api.openai.com/v1"}
+                    initialModel={status.model}
+                    hasSavedKey
                     onSaved={() => {
                       setSetupOpen(false);
                       loadStatus();
@@ -870,7 +874,7 @@ export function StudioDesk() {
                 <p className="service-line" role="status">
                   {serviceLine}
                   {status.kind === "configured" && status.editable ? (
-                    <button type="button" className="text-btn" onClick={() => setSetupOpen((open) => !open)}>
+                    <button type="button" className="service-edit" onClick={() => setSetupOpen((open) => !open)}>
                       {setupOpen ? "收起配置" : "更换生图服务"}
                     </button>
                   ) : null}

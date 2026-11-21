@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertResolvedAddresses, inspectProviderUrl, isBlockedAddress } from "./ssrf";
+import { assertProviderAddresses, assertResolvedAddresses, inspectProviderUrl, isBlockedAddress } from "./ssrf";
 
 describe("inspectProviderUrl", () => {
   it("accepts a public https origin", () => {
@@ -8,17 +8,24 @@ describe("inspectProviderUrl", () => {
   });
 
   it.each([
+    ["https://127.0.0.1/v1"],
+    ["https://10.1.2.3/v1"],
+    ["https://192.168.0.8:8080/v1"],
+    ["https://localhost/v1"],
+    ["http://192.168.1.8:8000/v1"],
+    ["http://127.0.0.1:7860/v1"],
+  ])("accepts a local provider %s", (raw) => {
+    expect(inspectProviderUrl(raw).ok).toBe(true);
+  });
+
+  it.each([
     ["http://api.example.com/v1", "https"],
     ["https://user:pass@api.example.com/v1", "账号"],
     ["https://api.example.com/v1?token=secret", "查询"],
-    ["https://localhost/v1", "本地"],
     ["https://printer/v1", "域名"],
-    ["https://169.254.169.254/latest", "保留"],
-    ["https://127.0.0.1/v1", "保留"],
-    ["https://10.1.2.3/v1", "保留"],
-    ["https://192.168.0.8/v1", "保留"],
-    ["https://[::1]/v1", "保留"],
-    ["https://metadata.google.internal/", "本地"],
+    ["https://169.254.169.254/latest", "元数据"],
+    ["http://169.254.169.254/latest", "元数据"],
+    ["https://metadata.google.internal/", "元数据"],
   ])("rejects %s", (raw, fragment) => {
     const verdict = inspectProviderUrl(raw);
     expect(verdict.ok).toBe(false);
@@ -45,5 +52,13 @@ describe("address blocking", () => {
     expect(assertResolvedAddresses(["8.8.8.8"])).toBeNull();
     expect(assertResolvedAddresses(["127.0.0.1"])).toMatch(/内网|保留/);
     expect(assertResolvedAddresses([])).toMatch(/没有解析/);
+  });
+
+  it("allows a configured provider on a private network and still blocks metadata", () => {
+    expect(assertProviderAddresses(["10.0.0.8"])).toBeNull();
+    expect(assertProviderAddresses(["192.168.1.8"])).toBeNull();
+    expect(assertProviderAddresses(["127.0.0.1"])).toBeNull();
+    expect(assertProviderAddresses(["169.254.169.254"])).toMatch(/元数据|链路/);
+    expect(assertProviderAddresses([])).toMatch(/没有解析/);
   });
 });

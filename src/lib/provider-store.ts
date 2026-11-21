@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { dirname, join } from "node:path";
 import type { EnvLike } from "./provider";
-import { inspectProviderUrl, isBlockedAddress } from "./ssrf";
+import { assertProviderAddresses, endpointUrl, inspectProviderUrl, isBlockedAddress, resolvePublicHost } from "./ssrf";
 
 export type SavedProvider = {
   baseUrl: string;
@@ -23,8 +23,8 @@ export function parseProviderSetup(input: unknown): { ok: true; value: SavedProv
   if (!apiKey) return { ok: false, error: "还没有填写密钥" };
   if (/\s/.test(apiKey)) return { ok: false, error: "密钥里不要带空格或换行" };
   if (apiKey.length < 8 || apiKey.length > 400) return { ok: false, error: "密钥长度看起来不对" };
-  if (!/^[A-Za-z0-9._:-]{1,80}$/.test(model)) {
-    return { ok: false, error: "模型名称只接受字母、数字、点、下划线、冒号和短横线" };
+  if (!isModelId(model)) {
+    return { ok: false, error: "模型名称只接受字母、数字、点、下划线、冒号、斜线和短横线" };
   }
   const normalized = checked.url.toString().replace(/\/$/, "");
   return { ok: true, value: { baseUrl: normalized, apiKey, model } };
@@ -86,4 +86,62 @@ export async function writeSavedProvider(value: SavedProvider, file = defaultFil
 
 export async function clearSavedProvider(file = defaultFile()): Promise<void> {
   await rm(file, { force: true });
+}
+
+export function isModelId(model: string): boolean {
+  return /^[A-Za-z0-9._:@/+-]{1,120}$/.test(model);
+}
+
+export async function listProviderModels(
+  input: { baseUrl: string; apiKey: string },
+  deps: { lookup?: (host: string) => Promise<string[]>; fetchImpl?: typeof fetch; signal?: AbortSignal } = {},
+): Promise<{ ok: true; models: string[] } | { ok: false; error: string }> {
+  const checked = inspectProviderUrl(input.baseUrl);
+  if (!checked.ok) return { ok: false, error: checked.reason };
+  if (!input.apiKey.trim()) return { ok: false, error: "还没有填写密钥" };
+  const lookup = deps.lookup ?? resolvePublicHost;
+  let addresses: string[];
+  try {
+    addresses = await lookup(checked.host);
+  } catch {
+    return { ok: false, error: "无法解析生图服务地址" };
+  }
+  const blocked = assertProviderAddresses(addresses);
+  if (blocked) return { ok: false, error: blocked };
+  const url = endpointUrl(checked.url, "/models");
+  const signal = deps.signal ?? AbortSignal.timeout(20_000);
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      method: "GET",
+      redirect: "manual",
+      signal,
+      headers: { Authorization: `Bearer ${input.apiKey}`, Accept: "application/json" },
+    });
+  } catch {
+    return { ok: false, error: "没有连上模型列表接口" };
+  }
+  if (response.type === "opaqueredirect" || response.status === 0 || (response.status >= 300 && response.status < 400)) {
+    return { ok: false, error: "模型列表接口返回了重定向" };
+  }
+  const text = await response.text();
+  if (!response.ok) return { ok: false, error: "模型列表接口没有成功返回" };
+  let json: unknown;
+  try {
+    json = JSON.parse(text) as unknown;
+  } catch {
+    return { ok: false, error: "模型列表不是 JSON" };
+  }
+  const data = (json as { data?: { id?: string }[] }).data;
+  if (!Array.isArray(data)) return { ok: false, error: "模型列表里没有 data" };
+  const models: string[] = [];
+  for (const item of data) {
+    const id = item?.id?.trim() ?? "";
+    if (!isModelId(id) || models.includes(id)) continue;
+    models.push(id);
+    if (models.length >= 200) break;
+  }
+  if (models.length === 0) return { ok: false, error: "接口没有返回可用的模型名称" };
+  return { ok: true, models };
 }

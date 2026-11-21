@@ -40,7 +40,10 @@ export async function POST(request: Request) {
   if (!parsed.ok) {
     return Response.json({ ok: false, error: parsed.error }, { status: parsed.status, headers });
   }
-  const setup = parseProviderSetup(parsed.value);
+  const saved = await readSavedProvider();
+  const record = parsed.value && typeof parsed.value === "object" ? (parsed.value as Record<string, unknown>) : {};
+  const typedKey = typeof record.apiKey === "string" ? record.apiKey.trim() : "";
+  const setup = parseProviderSetup({ ...record, apiKey: typedKey || saved?.apiKey || "" });
   if (!setup.ok) {
     return Response.json({ ok: false, error: setup.error }, { status: 400, headers });
   }

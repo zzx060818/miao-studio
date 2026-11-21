@@ -12,6 +12,7 @@ import type { Buckets } from "./rate-limit";
 import { takeToken } from "./rate-limit";
 import { sniffImage } from "./sniff";
 import {
+  assertProviderAddresses,
   assertResolvedAddresses,
   endpointUrl,
   inspectProviderUrl,
@@ -110,6 +111,7 @@ export function publicStatus(env: EnvLike, options?: { editable?: boolean }): Re
     model: config.model,
     capabilities: caps,
     detail: "密钥只留在这台电脑上。风格会写进提示词，不是供应商的独立参数。",
+    baseUrl: config.baseUrl,
   };
 }
 
@@ -175,7 +177,7 @@ export async function handleGenerate(input: unknown, deps: GenerateDeps): Promis
   } catch {
     return { status: 502, body: { ok: false, code: "dns", error: "无法解析生图服务地址" } };
   }
-  const blocked = assertResolvedAddresses(addresses);
+  const blocked = assertProviderAddresses(addresses);
   if (blocked) {
     return { status: 500, body: { ok: false, code: "ssrf", error: "已拒绝不安全的生图服务地址", detail: blocked } };
   }

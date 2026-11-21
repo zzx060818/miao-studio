@@ -71,15 +71,24 @@ describe("provider safety", () => {
     expect(blocked.status).toBe(500);
     expect(fetchImpl).not.toHaveBeenCalled();
 
-    const rebinding = await handleGenerate(valid, {
+    const metadata = await handleGenerate(valid, {
+      env: configured(),
+      buckets: buckets(),
+      fetchImpl,
+      lookup: async () => ["169.254.169.254"],
+    });
+    expect(metadata.status).toBe(500);
+    expect(metadata.body.code).toBe("ssrf");
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    const lan = await handleGenerate(valid, {
       env: configured(),
       buckets: buckets(),
       fetchImpl,
       lookup: async () => ["10.0.0.8"],
     });
-    expect(rebinding.status).toBe(500);
-    expect(rebinding.body.code).toBe("ssrf");
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(lan.status).toBe(502);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
 
     fetchImpl.mockClear();
     const redirect = await handleGenerate(valid, {

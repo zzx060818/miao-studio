@@ -5,12 +5,7 @@ export type UrlVerdict =
   | { ok: true; url: URL; host: string }
   | { ok: false; reason: string };
 
-const BLOCKED_HOSTS = new Set([
-  "localhost",
-  "localhost.localdomain",
-  "metadata",
-  "metadata.google.internal",
-]);
+const METADATA_HOSTS = new Set(["metadata", "metadata.google.internal"]);
 
 export function inspectProviderUrl(raw: string): UrlVerdict {
   let url: URL;
@@ -18,9 +13,6 @@ export function inspectProviderUrl(raw: string): UrlVerdict {
     url = new URL(raw);
   } catch {
     return { ok: false, reason: "生图服务地址不是合法 URL" };
-  }
-  if (url.protocol !== "https:") {
-    return { ok: false, reason: "生图服务只接受 https 地址" };
   }
   if (url.username || url.password) {
     return { ok: false, reason: "生图服务地址不能带账号或密码" };
@@ -30,23 +22,30 @@ export function inspectProviderUrl(raw: string): UrlVerdict {
   }
   const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
   if (!host) return { ok: false, reason: "生图服务地址缺少主机名" };
-  if (
-    BLOCKED_HOSTS.has(host) ||
-    host.endsWith(".localhost") ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal")
-  ) {
-    return { ok: false, reason: "生图服务地址指向了本地或内网主机" };
+  if (isMetadataHost(host)) {
+    return { ok: false, reason: "生图服务地址指向了云元数据地址" };
   }
-  const ipKind = isIP(host);
-  if (ipKind !== 0) {
-    if (isBlockedAddress(host)) {
-      return { ok: false, reason: "生图服务地址指向了内网或保留地址" };
-    }
-  } else if (!host.includes(".")) {
+  const local = isLocalProviderHost(host);
+  if (url.protocol === "http:") {
+    if (!local) return { ok: false, reason: "公网生图服务只接受 https 地址" };
+  } else if (url.protocol !== "https:") {
+    return { ok: false, reason: "生图服务只接受 http 或 https 地址" };
+  }
+  if (!local && isIP(host) === 0 && !host.includes(".")) {
     return { ok: false, reason: "生图服务地址需要完整的公网域名" };
   }
   return { ok: true, url, host };
+}
+
+function isMetadataHost(host: string): boolean {
+  return METADATA_HOSTS.has(host) || host.endsWith(".metadata.google.internal") || (isIP(host) !== 0 && isMetadataAddress(host));
+}
+
+function isLocalProviderHost(host: string): boolean {
+  if (host === "localhost" || host === "localhost.localdomain" || host.endsWith(".localhost") || host.endsWith(".local")) {
+    return true;
+  }
+  return isIP(host) !== 0 && isBlockedAddress(host) && !isMetadataAddress(host);
 }
 
 export function assertResolvedAddresses(addresses: string[]): string | null {
@@ -57,6 +56,37 @@ export function assertResolvedAddresses(addresses: string[]): string | null {
     }
   }
   return null;
+}
+
+export function assertProviderAddresses(addresses: string[]): string | null {
+  if (addresses.length === 0) return "生图服务地址没有解析出任何 IP";
+  for (const address of addresses) {
+    if (!isIP(address)) return "生图服务地址没有解析出任何 IP";
+    if (isMetadataAddress(address)) return "生图服务地址指向了云元数据或链路本地地址";
+  }
+  return null;
+}
+
+export function isMetadataAddress(address: string): boolean {
+  let ip = address.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (ip.startsWith("::ffff:")) {
+    const mapped = ip.slice("::ffff:".length);
+    if (isIP(mapped) === 4) ip = mapped;
+  }
+  if (isIP(ip) === 4) {
+    const parts = ip.split(".").map((part) => Number(part));
+    if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+    const [a] = parts;
+    if (a === 0 || a >= 224) return true;
+    if (a === 169 && parts[1] === 254) return true;
+    return false;
+  }
+  if (isIP(ip) === 6) {
+    if (ip === "::") return true;
+    const first = (ip.split("::")[0] ?? "").split(":")[0] ?? "";
+    return /^fe[89ab]/i.test(first);
+  }
+  return true;
 }
 
 export async function resolvePublicHost(host: string): Promise<string[]> {

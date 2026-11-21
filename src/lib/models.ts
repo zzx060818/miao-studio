@@ -2,10 +2,15 @@ import { LIMITS } from "./limits";
 
 export const ASPECTS = [
   { id: "1:1", label: "1:1 方图" },
+  { id: "5:4", label: "5:4 横图" },
+  { id: "4:5", label: "4:5 竖图" },
   { id: "4:3", label: "4:3 横图" },
   { id: "3:4", label: "3:4 竖图" },
+  { id: "3:2", label: "3:2 横图" },
+  { id: "2:3", label: "2:3 竖图" },
   { id: "16:9", label: "16:9 宽屏" },
   { id: "9:16", label: "9:16 竖屏" },
+  { id: "21:9", label: "21:9 超宽" },
 ] as const;
 
 export type AspectId = (typeof ASPECTS)[number]["id"];
@@ -46,29 +51,50 @@ export type PublicCaps = {
   note: string;
 };
 
-const SQUARE: Record<AspectId, string | null> = {
-  "1:1": "1024x1024",
-  "4:3": null,
-  "3:4": null,
-  "16:9": null,
-  "9:16": null,
-};
+function sizeMap(partial: Partial<Record<AspectId, string>>): Record<AspectId, string | null> {
+  return Object.fromEntries(ASPECTS.map((aspect) => [aspect.id, partial[aspect.id] ?? null])) as Record<AspectId, string | null>;
+}
 
-const GPT_SIZES: Record<AspectId, string | null> = {
+const SQUARE = sizeMap({ "1:1": "1024x1024" });
+
+const GPT_SIZES = sizeMap({
   "1:1": "1024x1024",
+  "5:4": "1536x1024",
+  "4:5": "1024x1536",
   "4:3": "1536x1024",
   "3:4": "1024x1536",
+  "3:2": "1536x1024",
+  "2:3": "1024x1536",
   "16:9": "1536x1024",
   "9:16": "1024x1536",
-};
+  "21:9": "1536x1024",
+});
 
-const D3_SIZES: Record<AspectId, string | null> = {
+const D3_SIZES = sizeMap({
   "1:1": "1024x1024",
-  "4:3": null,
-  "3:4": null,
+  "5:4": "1792x1024",
+  "4:5": "1024x1792",
+  "4:3": "1792x1024",
+  "3:4": "1024x1792",
+  "3:2": "1792x1024",
+  "2:3": "1024x1792",
   "16:9": "1792x1024",
   "9:16": "1024x1792",
-};
+  "21:9": "1792x1024",
+});
+
+const OPEN_SIZES = sizeMap({
+  "1:1": "1024x1024",
+  "5:4": "1280x1024",
+  "4:5": "1024x1280",
+  "4:3": "1024x768",
+  "3:4": "768x1024",
+  "3:2": "1536x1024",
+  "2:3": "1024x1536",
+  "16:9": "1344x768",
+  "9:16": "768x1344",
+  "21:9": "1792x768",
+});
 
 export const GPT_IMAGE_CAPS: Caps = {
   negative: false,
@@ -112,7 +138,7 @@ export const PLACEHOLDER_CAPS: Caps = {
   steps: false,
   reference: false,
   counts: [1],
-  sizes: { ...GPT_SIZES },
+  sizes: { ...OPEN_SIZES },
   referenceMimes: [],
   referenceMax: 0,
   squareOnly: false,
@@ -124,7 +150,7 @@ const CONSERVATIVE: Caps = {
   steps: false,
   reference: false,
   counts: [1],
-  sizes: { ...SQUARE },
+  sizes: { ...OPEN_SIZES },
   referenceMimes: [],
   referenceMax: 0,
   squareOnly: false,
@@ -249,6 +275,6 @@ export function composePrompt(prompt: string, styles: StyleId[]): string {
 export function modelNote(model: string): string {
   return (
     UI_MODELS.find((item) => item.id === model)?.note ??
-    "未内置这个模型的参数表。默认只发送方图和一张；排除内容、种子、步数、参考图需要服务器显式打开。"
+    "未内置这个模型的官方尺寸。画幅会按比例换算成像素发给接口；排除内容、种子、步数、参考图需要服务器显式打开。"
   );
 }

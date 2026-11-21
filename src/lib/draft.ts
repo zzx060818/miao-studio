@@ -1,4 +1,4 @@
-import { ASPECTS, type AspectId, type StyleId, isAspect, isStyle } from "./models";
+import { type AspectId, type StyleId, isAspect, isStyle } from "./models";
 
 export const APPLY_KEY = "miao.apply";
 export const DRAFT_KEY = "miao.draft.v1";
@@ -52,7 +52,7 @@ function parseDraft(raw: string | null): StoredDraft | null {
     const value = JSON.parse(raw) as Partial<StoredDraft>;
     if (typeof value.prompt !== "string") return null;
     const styles = Array.isArray(value.styles) ? value.styles.filter((item): item is StyleId => typeof item === "string" && isStyle(item)) : [];
-    const aspect = typeof value.aspect === "string" && isAspect(value.aspect) ? value.aspect : ASPECTS[1].id;
+    const aspect = typeof value.aspect === "string" && isAspect(value.aspect) ? value.aspect : "4:3";
     const count = typeof value.count === "number" && value.count >= 1 && value.count <= 4 ? value.count : 1;
     return {
       prompt: value.prompt,
