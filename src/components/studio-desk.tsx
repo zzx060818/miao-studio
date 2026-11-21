@@ -72,12 +72,14 @@ const starter = defaultDraft();
 export function StudioDesk() {
   const fileRef = useRef<HTMLInputElement>(null);
   const styleRef = useRef<HTMLDivElement>(null);
+  const modelRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const submitRef = useRef<(draft: StoredDraft) => Promise<void>>(async () => {});
   const busyRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const pendingAuto = useRef<StoredDraft | null>(null);
   const styleMenuId = useId();
+  const modelMenuId = useId();
   const advancedId = useId();
 
   const [draft, setDraft] = useState<StoredDraft>(starter);
@@ -89,6 +91,9 @@ export function StudioDesk() {
   const [mode, setMode] = useState<"create" | "saved">("create");
   const [advanced, setAdvanced] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [providerModels, setProviderModels] = useState<string[]>([]);
+  const [modelsNote, setModelsNote] = useState("");
   const [setupOpen, setSetupOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [refError, setRefError] = useState("");
@@ -177,12 +182,16 @@ export function StudioDesk() {
   }, []);
 
   useEffect(() => {
-    if (!styleOpen) return;
+    if (!styleOpen && !modelOpen) return;
     const onPointer = (event: PointerEvent) => {
-      if (!styleRef.current?.contains(event.target as Node)) setStyleOpen(false);
+      const target = event.target as Node;
+      if (styleOpen && !styleRef.current?.contains(target)) setStyleOpen(false);
+      if (modelOpen && !modelRef.current?.contains(target)) setModelOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setStyleOpen(false);
+      if (event.key !== "Escape") return;
+      setStyleOpen(false);
+      setModelOpen(false);
     };
     window.addEventListener("pointerdown", onPointer);
     window.addEventListener("keydown", onKey);
@@ -190,7 +199,40 @@ export function StudioDesk() {
       window.removeEventListener("pointerdown", onPointer);
       window.removeEventListener("keydown", onKey);
     };
-  }, [styleOpen]);
+  }, [styleOpen, modelOpen]);
+
+  const providerBase = status.kind === "configured" ? status.baseUrl : "";
+  useEffect(() => {
+    if (!providerBase) {
+      setProviderModels([]);
+      setModelsNote("");
+      return;
+    }
+    let ignore = false;
+    setModelsNote("正在获取模型列表…");
+    fetch("/api/provider/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ baseUrl: providerBase }),
+    })
+      .then((response) => response.json())
+      .then((json: { ok?: boolean; error?: string; models?: string[] }) => {
+        if (ignore) return;
+        if (json.ok && json.models && json.models.length > 0) {
+          setProviderModels(json.models);
+          setModelsNote("");
+          return;
+        }
+        setProviderModels([]);
+        setModelsNote(json.error || "没有获取到模型列表");
+      })
+      .catch(() => {
+        if (!ignore) setModelsNote("没有获取到模型列表");
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [providerBase]);
 
   useEffect(() => {
     return () => {
@@ -201,6 +243,31 @@ export function StudioDesk() {
   function patch(partial: Partial<StoredDraft>) {
     setAction(null);
     setDraft((current) => ({ ...current, ...partial }));
+  }
+
+  async function chooseModel(modelId: string) {
+    setModelOpen(false);
+    if (status.kind !== "configured") {
+      patch({ modelId });
+      return;
+    }
+    if (modelId === status.model) return;
+    try {
+      const response = await fetch("/api/provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseUrl: status.baseUrl, apiKey: "", model: modelId }),
+      });
+      const json = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || json.ok === false) {
+        setAction({ tone: "error", title: json.error || "没能更换模型" });
+        return;
+      }
+      setAction({ tone: "info", title: `已换成 ${modelId}` });
+      loadStatus();
+    } catch {
+      setAction({ tone: "error", title: "没能更换模型" });
+    }
   }
 
   function replaceResult(next: ResultView | null) {
@@ -716,24 +783,41 @@ export function StudioDesk() {
                   <h3>02 / 画面设定</h3>
                 </div>
                 <div className="field-grid">
-                  <label className="field-card">
+                  <div className="field-card">
                     <span>模型</span>
-                    <select
-                      value={status.kind === "configured" ? status.model : draft.modelId}
-                      onChange={(event) => patch({ modelId: event.target.value })}
-                      disabled={status.kind === "configured"}
-                    >
-                      {status.kind === "configured" ? (
-                        <option value={status.model}>{status.model}</option>
-                      ) : (
-                        UI_MODELS.map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.label}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </label>
+                    <div className="model-menu" ref={modelRef}>
+                      <button
+                        type="button"
+                        className="model-trigger"
+                        aria-haspopup="listbox"
+                        aria-expanded={modelOpen}
+                        aria-controls={modelMenuId}
+                        onClick={() => setModelOpen((open) => !open)}
+                      >
+                        <span>{modelLabel(status.kind === "configured" ? status.model : draft.modelId)}</span>
+                        <span aria-hidden="true">▾</span>
+                      </button>
+                      {modelOpen ? (
+                        <ul id={modelMenuId} role="listbox" aria-label="模型">
+                          {(status.kind === "configured"
+                            ? Array.from(new Set([status.model, ...providerModels]))
+                            : UI_MODELS.map((model) => model.id)
+                          ).map((modelId) => {
+                            const selected = modelId === (status.kind === "configured" ? status.model : draft.modelId);
+                            return (
+                              <li key={modelId} role="option" aria-selected={selected}>
+                                <button type="button" onClick={() => void chooseModel(modelId)}>
+                                  {selected ? "● " : "○ "}
+                                  {modelLabel(modelId)}
+                                </button>
+                              </li>
+                            );
+                          })}
+                          {modelsNote ? <li className="menu-note">{modelsNote}</li> : null}
+                        </ul>
+                      ) : null}
+                    </div>
+                  </div>
                   <label className="field-card">
                     <span>画幅</span>
                     <select value={draft.aspect} onChange={(event) => patch({ aspect: event.target.value as AspectId })}>
@@ -1019,6 +1103,10 @@ function WorkThumb({ blob }: { blob: Blob }) {
   }, [blob]);
   if (!url) return null;
   return <img src={url} alt="" />;
+}
+
+function modelLabel(id: string): string {
+  return UI_MODELS.find((model) => model.id === id)?.label ?? id;
 }
 
 function capsFor(status: ServiceStatus, modelId: string): PublicCaps {
