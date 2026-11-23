@@ -25,7 +25,8 @@ function Frame({ children }: { children: ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const { user, refresh } = useAuth();
-  const links = user?.role === "admin" ? [...LINKS, { href: "/members", label: "成员" }] : LINKS;
+  const links =
+    user?.role === "admin" ? [...LINKS, { href: "/members", label: "成员" }, { href: "/calls", label: "调用记录" }] : LINKS;
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });

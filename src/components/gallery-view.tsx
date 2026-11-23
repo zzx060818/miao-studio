@@ -67,7 +67,7 @@ export function GalleryView() {
       <div className="library-head">
         <div>
           <h1>作品集</h1>
-          <p>生成的图按账号存在这台服务器上。示例不会被记成历史。</p>
+          <p>这里只有你自己生成的图。别人的作品不会出现，管理员也只能在调用记录里看到请求，看不到这些图。</p>
         </div>
         <div className="filters" role="tablist" aria-label="作品筛选">
           <button type="button" role="tab" aria-selected={filter === "all"} className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>

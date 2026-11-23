@@ -106,7 +106,7 @@ export function MembersView() {
     <section className="library">
       <header className="library-head">
         <h1>成员</h1>
-        <p>管理员配置渠道。创作者可以生成。查看者只能看。作品按账号存在这台服务器上。</p>
+        <p>管理员配置渠道。作品只有本人能看。谁调用过生图，记在「调用记录」里。</p>
       </header>
       <form className="setup-card" onSubmit={(event) => void create(event)}>
         <h2>添加成员</h2>
