@@ -265,7 +265,19 @@ h1 {
 .polaroid-copy h2, .inspire h2, .library h1, .favorites h3, .section-head h3 {
   font-weight: 400;
 }
-.polaroid-copy h2 { margin: 10px 0 6px; font-size: 22px; }
+.polaroid-copy h2, .prompt-title { margin: 10px 0 6px; font-size: 22px; }
+.prompt-title {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+.prompt-title:disabled { text-decoration: none; cursor: default; opacity: 1; }
 .polaroid-meta {
   display: flex;
   justify-content: space-between;

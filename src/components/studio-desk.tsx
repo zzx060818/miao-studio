@@ -58,6 +58,7 @@ type ResultView = {
   negativePrompt: string;
   seed: number | null;
   steps: number | null;
+  count: number;
   modelLabel: string;
 };
 
@@ -290,6 +291,32 @@ export function StudioDesk() {
       count: 1,
     }));
     setMode("create");
+    promptRef.current?.focus();
+  }
+
+  function reuseShown() {
+    if (result) {
+      setDraft((current) => ({
+        ...current,
+        prompt: result.prompt,
+        aspect: result.aspect,
+        styles: result.styles,
+        negative: result.negativePrompt,
+        seed: result.seed?.toString() ?? "",
+        steps: result.steps?.toString() ?? "",
+        count: result.count,
+        modelId: result.modelLabel || current.modelId,
+      }));
+      setAction({ tone: "info", title: "已把这张图的提示和参数放回右侧" });
+      setMode("create");
+      promptRef.current?.focus();
+      return;
+    }
+    if (matched) {
+      applyExample(matched);
+      return;
+    }
+    setAction({ tone: "info", title: "左侧还没有可以复用的画面" });
   }
 
   function resetSheet() {
@@ -482,6 +509,7 @@ export function StudioDesk() {
         negativePrompt: typeof payload.negativePrompt === "string" ? payload.negativePrompt : "",
         seed: typeof payload.seed === "number" ? payload.seed : null,
         steps: typeof payload.steps === "number" ? payload.steps : null,
+        count: source.count,
         modelLabel: json.model || source.modelId,
       };
       try {
@@ -540,7 +568,7 @@ export function StudioDesk() {
         onDownload: () => downloadBlob(image.blob, `${safeFilename(result.title)}.${extensionFor(image.mime)}`),
         onReuse: () => {
           setViewer(null);
-          setAction({ tone: "info", title: "参数已留在右侧" });
+          reuseShown();
         },
         onRegenerate: () => {
           setViewer(null);
@@ -635,18 +663,19 @@ export function StudioDesk() {
                 ) : null}
               </div>
               <div className="polaroid-copy">
-                <h2>{result ? result.title : matched ? matched.title : "还没有标题"}</h2>
+                <button
+                  type="button"
+                  className="prompt-title"
+                  onClick={reuseShown}
+                  disabled={!result && !matched}
+                  title={result ? result.prompt : matched ? matched.prompt : undefined}
+                >
+                  {result ? result.title : matched ? matched.title : "还没有标题"}
+                </button>
                 <div className="polaroid-meta">
                   <p>{result ? resultMeta(result) : matched ? matched.meta : "参数还在右侧"}</p>
                   <div className="actions">
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => {
-                        if (matched) applyExample(matched);
-                        else setAction({ tone: "info", title: "参数已经在右侧" });
-                      }}
-                    >
+                    <button type="button" className="ghost" onClick={reuseShown} disabled={!result && !matched}>
                       复用参数
                     </button>
                     <button type="button" className="ghost regen" onClick={() => void submit(draft)}>
