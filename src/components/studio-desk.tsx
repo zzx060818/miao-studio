@@ -470,7 +470,18 @@ export function StudioDesk() {
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
-      const json = (await response.json()) as GenerateResponse;
+      const text = await response.text();
+      let json: GenerateResponse;
+      try {
+        json = JSON.parse(text) as GenerateResponse;
+      } catch {
+        setAction({
+          tone: "error",
+          title: "服务器中途断开了",
+          detail: "出图完成前连接断了，这次没有新图片。开发服务器默认只等 30 秒，请拉取代码后重新运行 npm run dev。",
+        });
+        return;
+      }
       if (!response.ok || !json.ok || !json.images?.length) {
         setAction({
           tone: "error",
@@ -534,7 +545,11 @@ export function StudioDesk() {
         setAction({ tone: "info", title: "已取消，没有生成图片" });
         return;
       }
-      setAction({ tone: "error", title: "没有连上服务器", detail: "这次没有新图片。" });
+      setAction({
+        tone: "error",
+        title: "没有连上服务器",
+        detail: "出图还没返回，连接就被断开了，这次没有新图片。请拉取代码后重新运行 npm run dev。",
+      });
     } finally {
       busyRef.current = false;
       abortRef.current = null;

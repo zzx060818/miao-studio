@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // The dev proxy drops a silent request after 30s. Local image servers often
+  // take longer, and the browser then only sees a broken connection.
+  experimental: {
+    proxyTimeout: 180_000,
+  },
   // Cursor's in-app preview loads the dev server from a forwarded host.
   allowedDevOrigins: [
     "127.0.0.1",

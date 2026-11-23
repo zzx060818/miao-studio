@@ -188,4 +188,35 @@ describe("provider safety", () => {
     }
     expect(last).toBe(429);
   });
+
+  it("explains a refused connection to a LAN image service", async () => {
+    const cause = Object.assign(new Error("connect ECONNREFUSED 192.168.2.18:80"), { code: "ECONNREFUSED" });
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("fetch failed", { cause });
+    });
+    const result = await handleGenerate(valid, {
+      env: { ...configured(), IMAGE_API_BASE_URL: "http://192.168.2.18/v1" },
+      buckets: buckets(),
+      fetchImpl,
+      lookup: async () => ["192.168.2.18"],
+    });
+    expect(result.status).toBe(502);
+    expect(result.body.detail).toMatch(/192\.168\.2\.18/);
+    expect(result.body.detail).toMatch(/端口/);
+    expect(JSON.stringify(result.body)).not.toContain(SECRET);
+  });
+
+  it("reports a slow image service as a timeout", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    });
+    const result = await handleGenerate(valid, {
+      env: configured(),
+      buckets: buckets(),
+      fetchImpl,
+      lookup: async () => ["8.8.8.8"],
+    });
+    expect(result.status).toBe(504);
+    expect(result.body.error).toMatch(/超时/);
+  });
 });

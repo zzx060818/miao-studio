@@ -58,12 +58,12 @@ export function readProviderConfig(env: EnvLike): ProviderConfig {
   const baseUrl = env.IMAGE_API_BASE_URL?.trim() ?? "";
   const apiKey = env.IMAGE_API_KEY?.trim() ?? "";
   const model = env.IMAGE_API_MODEL?.trim() ?? "";
-  const timeout = Number(env.IMAGE_API_TIMEOUT_MS ?? 60_000);
+  const timeout = Number(env.IMAGE_API_TIMEOUT_MS ?? 120_000);
   const extras = (env.IMAGE_API_CAPABILITIES ?? "")
     .split(",")
     .map((item) => item.trim())
     .filter((item) => EXTRA_NAMES.has(item));
-  const timeoutMs = Number.isFinite(timeout) ? Math.min(Math.max(timeout, 3_000), 120_000) : 60_000;
+  const timeoutMs = Number.isFinite(timeout) ? Math.min(Math.max(timeout, 3_000), 170_000) : 120_000;
   if (!baseUrl || !apiKey || !model) {
     return {
       configured: false,
@@ -205,13 +205,24 @@ export async function handleGenerate(input: unknown, deps: GenerateDeps): Promis
       },
     };
   } catch (error) {
-    if (isAbort(error)) {
+    const kind = failureKind(error);
+    if (kind === "cancel") {
       return { status: 499, body: { ok: false, code: "cancelled", error: "已取消，没有生成图片" } };
     }
-    const message = error instanceof Error ? error.message : "生图服务没有返回图片";
+    if (kind === "timeout") {
+      return {
+        status: 504,
+        body: {
+          ok: false,
+          code: "timeout",
+          error: "生图服务超时",
+          detail: `等了 ${Math.round(active.timeoutMs / 1000)} 秒还没有图片。`,
+        },
+      };
+    }
     return {
       status: 502,
-      body: { ok: false, code: "provider", error: "生图服务没有返回图片", detail: sanitizeProviderMessage(message) },
+      body: { ok: false, code: "provider", error: "生图服务没有返回图片", detail: sanitizeProviderMessage(describeFetchError(error)) },
     };
   }
 }
@@ -266,13 +277,25 @@ async function requestImages(args: {
     body = JSON.stringify(payload);
   }
 
-  const response = await fetchImpl(url, { method: "POST", headers, body, redirect: "manual", signal });
+  let response: Response;
+  try {
+    response = await fetchImpl(url, { method: "POST", headers, body, redirect: "manual", signal });
+  } catch (error) {
+    const kind = failureKind(error);
+    if (kind === "cancel" || kind === "timeout") throw error;
+    throw new Error(describeFetchError(error, url));
+  }
   if (response.type === "opaqueredirect" || response.status === 0 || (response.status >= 300 && response.status < 400)) {
     throw new Error("生图服务返回了重定向，已停止请求");
   }
   const text = await response.text();
   if (text.length > LIMITS.maxProviderJsonChars) throw new Error("生图服务的响应太大");
-  if (!response.ok) throw new Error(readProviderError(text, response.status));
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error("生图接口返回 404。局域网地址末尾通常要带 /v1，例如 http://192.168.2.18:8000/v1");
+    }
+    throw new Error(readProviderError(text, response.status));
+  }
 
   let json: unknown;
   try {
@@ -359,8 +382,50 @@ function mergeSignals(signal: AbortSignal | undefined, timeoutMs: number): Abort
   return AbortSignal.any([signal, timeout]);
 }
 
-function isAbort(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
+function failureKind(error: unknown): "cancel" | "timeout" | "other" {
+  if (!(error instanceof Error)) return "other";
+  if (error.name === "TimeoutError") return "timeout";
+  if (error.name === "AbortError") return "cancel";
+  return "other";
+}
+
+function describeFetchError(error: unknown, url?: string): string {
+  const code = causeCode(error);
+  const where = url ? `（${safeHost(url)}）` : "";
+  if (code === "ECONNREFUSED") return `连不上生图服务${where}。请核对 IP 和端口，例如 http://192.168.2.18:8000/v1`;
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return `找不到生图服务的主机${where}`;
+  if (code === "EHOSTUNREACH" || code === "ENETUNREACH" || code === "ECONNRESET") return `到生图服务的网络中断了${where}`;
+  if (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT" || code === "UND_ERR_HEADERS_TIMEOUT") {
+    return `连接生图服务超时${where}`;
+  }
+  if (error instanceof Error && error.message && error.message !== "fetch failed") return error.message;
+  const cause = error instanceof Error ? error.cause : undefined;
+  if (cause instanceof Error && cause.message) return cause.message;
+  return "没有连上生图服务";
+}
+
+function causeCode(error: unknown): string {
+  const cause = error instanceof Error ? error.cause : undefined;
+  if (!cause || typeof cause !== "object") return "";
+  const code = (cause as { code?: unknown }).code;
+  if (typeof code === "string") return code;
+  const nested = (cause as { errors?: unknown }).errors;
+  if (Array.isArray(nested)) {
+    for (const item of nested) {
+      const found = causeCode(item instanceof Error ? item : Object.assign(new Error("nested"), { cause: item }));
+      if (found) return found;
+    }
+  }
+  return "";
+}
+
+function safeHost(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return "";
+  }
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

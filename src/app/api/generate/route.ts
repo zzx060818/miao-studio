@@ -8,6 +8,7 @@ import { clientIp, parseJsonLimited } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 180;
 
 const buckets: Buckets = { ip: new Map(), global: new Map() };
 
