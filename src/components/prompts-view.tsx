@@ -46,7 +46,7 @@ export function PromptsView() {
       <div className="library-head">
         <div>
           <h1>提示词</h1>
-          <p>常用的句子存在这台浏览器里，最多 100 条。换一台电脑就看不到了。</p>
+          <p>常用的句子按账号存在这台服务器上，最多 100 条。</p>
         </div>
         <Link className="ghost linkish" href="/">
           回创作台

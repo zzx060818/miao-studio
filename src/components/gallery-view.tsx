@@ -52,7 +52,7 @@ export function GalleryView() {
         aspect: work.aspect,
         count: Math.min(work.images.length, 4) || 1,
         styles: work.styles,
-        modelId: "placeholder",
+        modelId: work.modelLabel || "placeholder",
         negative: work.negativePrompt,
         seed: work.seed?.toString() ?? "",
         steps: work.steps?.toString() ?? "",
@@ -67,7 +67,7 @@ export function GalleryView() {
       <div className="library-head">
         <div>
           <h1>作品集</h1>
-          <p>只有真正生成并留在这台浏览器里的图会出现在这里。示例不会被记成历史。</p>
+          <p>生成的图按账号存在这台服务器上。示例不会被记成历史。</p>
         </div>
         <div className="filters" role="tablist" aria-label="作品筛选">
           <button type="button" role="tab" aria-selected={filter === "all"} className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>

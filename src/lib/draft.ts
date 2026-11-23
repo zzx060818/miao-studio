@@ -3,6 +3,15 @@ import { type AspectId, type StyleId, isAspect, isStyle } from "./models";
 export const APPLY_KEY = "miao.apply";
 export const DRAFT_KEY = "miao.draft.v1";
 
+let applyKey = APPLY_KEY;
+let draftKey = DRAFT_KEY;
+
+export function bindDraftOwner(userId: string) {
+  const id = userId.trim();
+  applyKey = id ? `${APPLY_KEY}:${id}` : APPLY_KEY;
+  draftKey = id ? `${DRAFT_KEY}:${id}` : DRAFT_KEY;
+}
+
 export type StoredDraft = {
   prompt: string;
   aspect: AspectId;
@@ -29,21 +38,21 @@ export function defaultDraft(): StoredDraft {
 }
 
 export function writeApply(draft: StoredDraft, auto = false) {
-  sessionStorage.setItem(APPLY_KEY, JSON.stringify({ ...draft, auto }));
+  sessionStorage.setItem(applyKey, JSON.stringify({ ...draft, auto }));
 }
 
 export function takeApply(): StoredDraft | null {
-  const raw = sessionStorage.getItem(APPLY_KEY);
-  sessionStorage.removeItem(APPLY_KEY);
+  const raw = sessionStorage.getItem(applyKey);
+  sessionStorage.removeItem(applyKey);
   return parseDraft(raw);
 }
 
 export function readDraft(): StoredDraft | null {
-  return parseDraft(localStorage.getItem(DRAFT_KEY));
+  return parseDraft(localStorage.getItem(draftKey));
 }
 
 export function writeDraft(draft: StoredDraft) {
-  localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draft, auto: undefined }));
+  localStorage.setItem(draftKey, JSON.stringify({ ...draft, auto: undefined }));
 }
 
 function parseDraft(raw: string | null): StoredDraft | null {

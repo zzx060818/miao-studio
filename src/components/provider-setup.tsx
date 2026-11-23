@@ -72,7 +72,7 @@ export function ProviderSetup({
       setApiKey("");
       onSaved();
     } catch {
-      setError("没能连上这台电脑上的配置接口");
+      setError("没能连上服务器上的配置接口");
     } finally {
       setSaving(false);
     }
@@ -87,9 +87,9 @@ export function ProviderSetup({
       }}
     >
       <div className="section-head tight">
-        <h3>配置生图服务</h3>
+        <h3>配置渠道</h3>
       </div>
-      <p>填写接口地址、密钥和模型。密钥只写在这台电脑上，保存后页面不再显示它。</p>
+      <p>只有管理员能改渠道。填写接口地址、密钥和默认模型。密钥写在这台服务器上，保存后页面不再显示它。</p>
       <label>
         接口地址
         <input

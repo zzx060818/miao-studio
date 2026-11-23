@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DALLE2_CAPS, GPT_IMAGE_CAPS } from "./models";
+import { DALLE2_CAPS, DALLE3_CAPS, GPT_IMAGE_CAPS } from "./models";
 import { sniffImage } from "./sniff";
 import { enforceCapabilities, parseGenerateBody, parseJsonLimited } from "./validation";
 
@@ -68,5 +68,11 @@ describe("enforceCapabilities", () => {
     });
     if (!square.ok) throw new Error(square.error);
     expect(enforceCapabilities(square.value, DALLE2_CAPS)).toBeNull();
+  });
+
+  it("lets DALL·E 3 draw one picture at a time", () => {
+    const parsed = parseGenerateBody({ ...valid, count: 2, aspect: "1:1" });
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(enforceCapabilities(parsed.value, DALLE3_CAPS)).toMatch(/一次只能画 1/);
   });
 });

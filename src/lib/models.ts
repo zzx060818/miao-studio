@@ -113,7 +113,7 @@ export const DALLE3_CAPS: Caps = {
   seed: false,
   steps: false,
   reference: false,
-  counts: [1, 2, 3, 4],
+  counts: [1],
   sizes: D3_SIZES,
   referenceMimes: [],
   referenceMax: 0,

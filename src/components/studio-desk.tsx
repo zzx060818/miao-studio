@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useAuth } from "./auth-provider";
 import { CheckMark } from "./cat-mark";
 import { ProviderSetup } from "./provider-setup";
 import { ViewerDialog, type ViewerData } from "./viewer-dialog";
@@ -20,6 +21,7 @@ import { defaultDraft, readDraft, takeApply, writeDraft, type StoredDraft } from
 import { EXAMPLES, type Example } from "@/lib/examples";
 import { imageFromPayload } from "@/lib/image-payload";
 import { LIMITS } from "@/lib/limits";
+import { canGenerate, canManage } from "@/lib/roles";
 import {
   ASPECTS,
   STYLES,
@@ -73,6 +75,9 @@ type GenerateResponse = {
 const starter = defaultDraft();
 
 export function StudioDesk() {
+  const { user } = useAuth();
+  const canDraw = user ? canGenerate(user.role) : false;
+  const canConfigure = user ? canManage(user.role) : false;
   const fileRef = useRef<HTMLInputElement>(null);
   const styleRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -137,7 +142,11 @@ export function StudioDesk() {
             editable: json.editable === true,
             baseUrl: json.baseUrl ?? "",
           });
-          setDraft((current) => ({ ...current, modelId: json.model ?? current.modelId }));
+          setDraft((current) => {
+            if (!json.model || (current.modelId && current.modelId !== "placeholder")) return current;
+            if (current.modelId === json.model) return current;
+            return { ...current, modelId: json.model };
+          });
           return;
         }
         setStatus({
@@ -197,9 +206,9 @@ export function StudioDesk() {
     };
   }, [styleOpen]);
 
-  const providerBase = status.kind === "configured" ? status.baseUrl : "";
+  const channelReady = status.kind === "configured" && canDraw;
   useEffect(() => {
-    if (!providerBase) {
+    if (!channelReady) {
       setProviderModels([]);
       setModelsNote("");
       return;
@@ -209,7 +218,7 @@ export function StudioDesk() {
     fetch("/api/provider/models", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ baseUrl: providerBase }),
+      body: JSON.stringify({}),
     })
       .then((response) => response.json())
       .then((json: { ok?: boolean; error?: string; models?: string[] }) => {
@@ -228,7 +237,7 @@ export function StudioDesk() {
     return () => {
       ignore = true;
     };
-  }, [providerBase]);
+  }, [channelReady]);
 
   useEffect(() => {
     return () => {
@@ -239,27 +248,6 @@ export function StudioDesk() {
   function patch(partial: Partial<StoredDraft>) {
     setAction(null);
     setDraft((current) => ({ ...current, ...partial }));
-  }
-
-  async function chooseModel(modelId: string) {
-    patch({ modelId });
-    if (status.kind !== "configured" || modelId === status.model) return;
-    try {
-      const response = await fetch("/api/provider", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: status.baseUrl, apiKey: "", model: modelId }),
-      });
-      const json = (await response.json()) as { ok?: boolean; error?: string };
-      if (!response.ok || json.ok === false) {
-        setAction({ tone: "error", title: json.error || "没能更换模型" });
-        return;
-      }
-      setAction({ tone: "info", title: `已换成 ${modelId}` });
-      loadStatus();
-    } catch {
-      setAction({ tone: "error", title: "没能更换模型" });
-    }
   }
 
   function replaceResult(next: ResultView | null) {
@@ -390,7 +378,7 @@ export function StudioDesk() {
       setAction({
         tone: "info",
         title: outcome === "exists" ? "这句已经在提示词里" : "已存进提示词",
-        detail: "存在这台浏览器里。",
+        detail: "存在这台服务器上，跟账号走。",
       });
     } catch (error) {
       setAction({ tone: "error", title: storageErrorMessage(error) });
@@ -420,6 +408,10 @@ export function StudioDesk() {
 
   async function submit(source: StoredDraft) {
     if (busyRef.current) return;
+    if (!canDraw) {
+      setAction({ tone: "error", title: "查看者不能生成", detail: "请管理员把角色改成创作者。" });
+      return;
+    }
     const prompt = source.prompt.trim();
     if (!prompt) {
       setAction({ tone: "error", title: "先写下想画的内容" });
@@ -528,7 +520,7 @@ export function StudioDesk() {
         });
         await refreshLibrary();
         replaceResult(view);
-        setAction({ tone: "info", title: "生成完成", detail: "已放进这台浏览器的作品集。" });
+        setAction({ tone: "info", title: "生成完成", detail: "已放进你的作品集。" });
       } catch (error) {
         replaceResult(view);
         setAction({
@@ -556,6 +548,38 @@ export function StudioDesk() {
     abortRef.current?.abort();
   }
 
+  function pictureDraft(): StoredDraft | null {
+    if (result) {
+      return {
+        ...draft,
+        prompt: result.prompt,
+        aspect: result.aspect,
+        styles: result.styles,
+        negative: result.negativePrompt,
+        seed: result.seed?.toString() ?? "",
+        steps: result.steps?.toString() ?? "",
+        count: result.count,
+        modelId: result.modelLabel || draft.modelId,
+      };
+    }
+    if (matched) {
+      return {
+        ...draft,
+        prompt: matched.prompt,
+        aspect: matched.aspect,
+        styles: [matched.styleId],
+        count: 1,
+      };
+    }
+    return null;
+  }
+
+  function regenerate() {
+    const next = pictureDraft() ?? draft;
+    setDraft(next);
+    void submit(next);
+  }
+
   function openViewer() {
     if (result) {
       const image = result.images[result.index];
@@ -572,7 +596,7 @@ export function StudioDesk() {
         },
         onRegenerate: () => {
           setViewer(null);
-          void submit(draft);
+          regenerate();
         },
       });
       return;
@@ -590,7 +614,7 @@ export function StudioDesk() {
       },
       onRegenerate: () => {
         setViewer(null);
-        void submit(draft);
+        regenerate();
       },
     });
   }
@@ -600,7 +624,7 @@ export function StudioDesk() {
       ? Array.from(new Set([status.model, draft.modelId, ...providerModels].filter((id) => id && id !== "placeholder")))
       : UI_MODELS.map((model) => model.id);
   const modelValue = modelOptions.includes(draft.modelId) ? draft.modelId : modelOptions[0];
-  const serviceLine = serviceCopy(status);
+  const serviceLine = serviceCopy(status, canConfigure);
   const sampleLine = result
     ? "这张是刚生成的作品，不是示例。"
     : matched
@@ -670,7 +694,7 @@ export function StudioDesk() {
                   disabled={!result && !matched}
                   title={result ? result.prompt : matched ? matched.prompt : undefined}
                 >
-                  {result ? result.title : matched ? matched.title : "还没有标题"}
+                  {result ? result.prompt : matched ? matched.prompt : "还没有标题"}
                 </button>
                 <div className="polaroid-meta">
                   <p>{result ? resultMeta(result) : matched ? matched.meta : "参数还在右侧"}</p>
@@ -678,7 +702,7 @@ export function StudioDesk() {
                     <button type="button" className="ghost" onClick={reuseShown} disabled={!result && !matched}>
                       复用参数
                     </button>
-                    <button type="button" className="ghost regen" onClick={() => void submit(draft)}>
+                    <button type="button" className="ghost regen" onClick={regenerate} disabled={!canDraw}>
                       再生成
                     </button>
                     <button
@@ -814,7 +838,7 @@ export function StudioDesk() {
                     <select
                       aria-label="模型"
                       value={modelValue}
-                      onChange={(event) => void chooseModel(event.target.value)}
+                      onChange={(event) => patch({ modelId: event.target.value })}
                     >
                       {modelOptions.map((modelId) => (
                         <option key={modelId} value={modelId}>
@@ -845,7 +869,10 @@ export function StudioDesk() {
                   </label>
                 </div>
                 {draft.modelId !== "placeholder" || status.kind === "configured" ? (
-                  <p className="model-note">{activeCaps.note}</p>
+                  <p className="model-note">
+                    {activeCaps.note}
+                    {status.kind === "configured" ? " 下拉只决定这一次用哪个模型，不会改掉服务里的默认模型。" : ""}
+                  </p>
                 ) : null}
                 {modelsNote ? <p className="field-error">{modelsNote}</p> : null}
                 <div className="style-row">
@@ -935,8 +962,8 @@ export function StudioDesk() {
                   ) : null}
                 </div>
 
-                {status.kind === "unconfigured" && status.editable ? <ProviderSetup onSaved={() => loadStatus()} /> : null}
-                {status.kind === "configured" && status.editable && setupOpen ? (
+                {canConfigure && status.kind === "unconfigured" && status.editable ? <ProviderSetup onSaved={() => loadStatus()} /> : null}
+                {canConfigure && status.kind === "configured" && status.editable && setupOpen ? (
                   <ProviderSetup
                     initialBaseUrl={status.baseUrl || "https://api.openai.com/v1"}
                     initialModel={status.model}
@@ -953,19 +980,21 @@ export function StudioDesk() {
                     {action.detail ? <p>{action.detail}</p> : null}
                   </div>
                 ) : null}
+                {!canDraw ? <p className="model-note">当前是查看者，可以看示例和自己的收藏，不能生成。</p> : null}
                 <button
                   type="button"
                   className="generate"
                   onClick={() => (busy ? cancel() : void submit(draft))}
                   aria-label={busy ? "取消生成" : "开始生成"}
+                  disabled={!canDraw && !busy}
                 >
                   {busy ? "取消" : "+ 开始生成"}
                 </button>
                 <p className="service-line" role="status">
                   {serviceLine}
-                  {status.kind === "configured" && status.editable ? (
+                  {canConfigure && status.kind === "configured" && status.editable ? (
                     <button type="button" className="service-edit" onClick={() => setSetupOpen((open) => !open)}>
-                      {setupOpen ? "收起配置" : "更换生图服务"}
+                      {setupOpen ? "收起配置" : "配置渠道"}
                     </button>
                   ) : null}
                 </p>
@@ -990,6 +1019,7 @@ export function StudioDesk() {
                     negative: work.negativePrompt,
                     seed: work.seed?.toString() ?? "",
                     steps: work.steps?.toString() ?? "",
+                    modelId: work.modelLabel || current.modelId,
                   }));
                 }}
               />
@@ -1147,12 +1177,13 @@ function resultMeta(result: ResultView): string {
   return `${style} / ${result.aspect} / ${result.modelLabel}`;
 }
 
-function serviceCopy(status: ServiceStatus): string {
+function serviceCopy(status: ServiceStatus, canConfigure: boolean): string {
   if (status.kind === "loading") return "正在确认生图服务…";
-  if (status.kind === "configured") return "生图服务已配置。密钥只留在这台电脑上。";
-  if (status.kind === "unknown") return "没能确认生图服务状态。提交时以服务器的回答为准。";
-  if (status.kind === "unconfigured" && status.editable) return "还没接入生图服务。先在上面保存接口地址、密钥和模型。";
-  return "尚未配置生图服务。可以先写提示和调参数，现在按生成会明确失败。";
+  if (status.kind === "configured") return canConfigure ? "渠道已配置。密钥只留在这台服务器上。" : "渠道已由管理员配置。密钥不会出现在这页。";
+  if (status.kind === "unknown") return "没能确认渠道状态。提交时以服务器的回答为准。";
+  if (status.kind === "unconfigured" && status.editable && canConfigure) return "还没配置渠道。管理员在上面保存接口地址、密钥和模型。";
+  if (status.kind === "unconfigured" && !canConfigure) return "渠道还没配好。只有管理员能配置接口。";
+  return "尚未配置渠道。可以先写提示和调参数，现在按生成会明确失败。";
 }
 
 function extensionFor(mime: string): string {

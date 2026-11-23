@@ -99,7 +99,7 @@ export function publicStatus(env: EnvLike, options?: { editable?: boolean }): Re
       model: null,
       capabilities: null,
       detail: editable
-        ? "在这页填上接口地址、密钥和模型。密钥只留在这台电脑上，页面不会再把它显示出来。"
+        ? "管理员在这页填上接口地址、密钥和模型。密钥只留在这台服务器上，页面不会再把它显示出来。"
         : "服务器还没有同时配置 IMAGE_API_BASE_URL、IMAGE_API_KEY 和 IMAGE_API_MODEL。可以先写提示、存句子、看示例。",
     };
   }
@@ -110,7 +110,7 @@ export function publicStatus(env: EnvLike, options?: { editable?: boolean }): Re
     message: "生图服务已配置",
     model: config.model,
     capabilities: caps,
-    detail: "密钥只留在这台电脑上。风格会写进提示词，不是供应商的独立参数。",
+    detail: "密钥只留在这台服务器上。风格会写进提示词，不是供应商的独立参数。",
     baseUrl: config.baseUrl,
   };
 }
