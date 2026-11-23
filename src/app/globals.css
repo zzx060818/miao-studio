@@ -82,23 +82,6 @@ img { max-width: 100%; }
 }
 .brand-lockup { display: flex; align-items: center; gap: 8px; }
 .cat { width: 46px; height: 40px; display: block; }
-.mark-page { padding-top: 8px; }
-.mark-lead { max-width: 42em; margin: 0 0 16px; color: var(--muted); }
-.mark-sheet { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.mark-card {
-  background: var(--paper);
-  border: 2px solid var(--ink);
-  box-shadow: 5px 5px 0 var(--ink);
-  padding: 16px 16px 12px;
-}
-.mark-stage { display: flex; align-items: flex-end; gap: 18px; min-height: 96px; }
-.mark-lg { width: 112px; height: 98px; display: block; }
-.mark-sm { width: 46px; height: 40px; display: block; }
-.mark-card h2 { margin: 12px 0 6px; font-size: 22px; font-weight: 400; }
-.mark-card p { margin: 0; color: var(--muted); font-size: 13px; }
-@media (max-width: 800px) {
-  .mark-sheet { grid-template-columns: 1fr; }
-}
 .brand-name { display: block; font-size: 20px; line-height: 1.15; }
 .brand-tag { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

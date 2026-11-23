@@ -54,22 +54,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBoundFor(user.id);
   }, [user]);
 
-  const loginPage = path === "/login";
-  const guestOk = loginPage || path === "/marks";
+  const open = path === "/login";
   const ready = !user || boundFor === user.id;
 
   useEffect(() => {
     if (loading || !ready) return;
-    if (!user && !guestOk) router.replace("/login");
-    if (user && loginPage) router.replace("/");
-  }, [loading, ready, user, guestOk, loginPage, router]);
+    if (!user && !open) router.replace("/login");
+    if (user && open) router.replace("/");
+  }, [loading, ready, user, open, router]);
 
   let body: ReactNode = children;
   if (loading || !ready) {
     body = <p className="sample-line">正在确认是谁在用这台创作台…</p>;
-  } else if (!user && !guestOk) {
+  } else if (!user && !open) {
     body = <p className="sample-line">正在去登录…</p>;
-  } else if (user && loginPage) {
+  } else if (user && open) {
     body = <p className="sample-line">已经登录，正在回到创作台…</p>;
   }
 
