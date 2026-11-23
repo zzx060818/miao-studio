@@ -112,6 +112,21 @@ describe("provider safety", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("uses the model and count chosen on the page", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { model?: string; n?: number };
+      expect(body.model).toBe("vendor/flux");
+      expect(body.n).toBe(3);
+      return Response.json({ data: [{ b64_json: PNG }] });
+    });
+    const result = await handleGenerate(
+      { ...valid, model: "vendor/flux", count: 3 },
+      { env: configured(), buckets: buckets(), fetchImpl, lookup: async () => ["8.8.8.8"] },
+    );
+    expect(result.status).toBe(200);
+    expect(result.body.model).toBe("vendor/flux");
+  });
+
   it("sends a generation request without leaking the key back to the browser", async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const headers = new Headers(init?.headers);

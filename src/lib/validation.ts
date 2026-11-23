@@ -18,6 +18,7 @@ export type GenerateRequest = {
   aspect: AspectId;
   count: number;
   styles: StyleId[];
+  model?: string;
   negativePrompt?: string;
   seed?: number;
   steps?: number;
@@ -73,6 +74,14 @@ export function parseGenerateBody(input: unknown): ParseResult {
   const references = parseReferences(body.references);
   if (references.ok === false) return references;
 
+  let model: string | undefined;
+  if (body.model !== undefined && body.model !== "") {
+    if (typeof body.model !== "string" || !/^[^\s"'<>]{1,120}$/.test(body.model)) {
+      return { ok: false, error: "模型名称无法识别" };
+    }
+    model = body.model;
+  }
+
   return {
     ok: true,
     value: {
@@ -80,6 +89,7 @@ export function parseGenerateBody(input: unknown): ParseResult {
       aspect: body.aspect,
       count: body.count,
       styles,
+      model,
       negativePrompt,
       seed: seed.value,
       steps: steps.value,

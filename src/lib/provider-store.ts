@@ -89,7 +89,21 @@ export async function clearSavedProvider(file = defaultFile()): Promise<void> {
 }
 
 export function isModelId(model: string): boolean {
-  return /^[A-Za-z0-9._:@/+-]{1,120}$/.test(model);
+  return /^[^\s"'<>]{1,120}$/.test(model);
+}
+
+function modelEntries(json: unknown): string[] | null {
+  const record = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+  const list = record?.data ?? record?.models ?? record?.result ?? json;
+  if (!Array.isArray(list)) return null;
+  return list.flatMap((item) => {
+    if (typeof item === "string") return [item];
+    if (item && typeof item === "object") {
+      const id = (item as { id?: unknown; name?: unknown }).id ?? (item as { name?: unknown }).name;
+      return typeof id === "string" ? [id] : [];
+    }
+    return [];
+  });
 }
 
 export async function listProviderModels(
@@ -133,11 +147,11 @@ export async function listProviderModels(
   } catch {
     return { ok: false, error: "模型列表不是 JSON" };
   }
-  const data = (json as { data?: { id?: string }[] }).data;
-  if (!Array.isArray(data)) return { ok: false, error: "模型列表里没有 data" };
+  const data = modelEntries(json);
+  if (!data) return { ok: false, error: "模型列表里没有可用的名称" };
   const models: string[] = [];
   for (const item of data) {
-    const id = item?.id?.trim() ?? "";
+    const id = item.trim();
     if (!isModelId(id) || models.includes(id)) continue;
     models.push(id);
     if (models.length >= 200) break;

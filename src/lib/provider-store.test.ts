@@ -38,7 +38,8 @@ describe("provider setup", () => {
     expect(parseProviderSetup({ baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-image-1" }).ok).toBe(false);
     expect(parseProviderSetup({ baseUrl: "https://api.openai.com/v1", apiKey: "short", model: "gpt-image-1" }).ok).toBe(false);
     expect(parseProviderSetup({ baseUrl: "https://api.openai.com/v1", apiKey: `${SECRET} tail`, model: "gpt-image-1" }).ok).toBe(false);
-    expect(parseProviderSetup({ baseUrl: "https://api.openai.com/v1", apiKey: SECRET, model: "模型" }).ok).toBe(false);
+    expect(parseProviderSetup({ baseUrl: "https://api.openai.com/v1", apiKey: SECRET, model: "bad model" }).ok).toBe(false);
+    expect(parseProviderSetup({ baseUrl: "https://api.openai.com/v1", apiKey: SECRET, model: "通义万相" }).ok).toBe(true);
     expect(parseProviderSetup({ baseUrl: "https://10.0.0.8:8000/v1", apiKey: SECRET, model: "vendor/flux" }).ok).toBe(true);
   });
 
@@ -73,7 +74,7 @@ describe("provider setup", () => {
   it("reads model ids from an OpenAI-compatible list and does not return the key", async () => {
     const fetchImpl = async (_url: string | URL | Request, init?: RequestInit) => {
       expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${SECRET}`);
-      return Response.json({ data: [{ id: "gpt-image-1" }, { id: "vendor/flux" }, { id: "跳过" }] });
+      return Response.json({ data: [{ id: "gpt-image-1" }, { id: "vendor/flux" }, { name: "通义万相" }, { id: "bad id" }] });
     };
     const listed = await listProviderModels(
       { baseUrl: "https://api.example.com/v1", apiKey: SECRET },
@@ -81,7 +82,7 @@ describe("provider setup", () => {
     );
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
-    expect(listed.models).toEqual(["gpt-image-1", "vendor/flux"]);
+    expect(listed.models).toEqual(["gpt-image-1", "vendor/flux", "通义万相"]);
     expect(JSON.stringify(listed)).not.toContain(SECRET);
   });
 });

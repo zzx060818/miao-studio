@@ -24,6 +24,8 @@ import {
   ASPECTS,
   STYLES,
   UI_MODELS,
+  capsForModel,
+  modelNote,
   styleLabel,
   toPublicCaps,
   type AspectId,
@@ -72,14 +74,12 @@ const starter = defaultDraft();
 export function StudioDesk() {
   const fileRef = useRef<HTMLInputElement>(null);
   const styleRef = useRef<HTMLDivElement>(null);
-  const modelRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const submitRef = useRef<(draft: StoredDraft) => Promise<void>>(async () => {});
   const busyRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const pendingAuto = useRef<StoredDraft | null>(null);
   const styleMenuId = useId();
-  const modelMenuId = useId();
   const advancedId = useId();
 
   const [draft, setDraft] = useState<StoredDraft>(starter);
@@ -91,7 +91,6 @@ export function StudioDesk() {
   const [mode, setMode] = useState<"create" | "saved">("create");
   const [advanced, setAdvanced] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
-  const [modelOpen, setModelOpen] = useState(false);
   const [providerModels, setProviderModels] = useState<string[]>([]);
   const [modelsNote, setModelsNote] = useState("");
   const [setupOpen, setSetupOpen] = useState(false);
@@ -182,16 +181,12 @@ export function StudioDesk() {
   }, []);
 
   useEffect(() => {
-    if (!styleOpen && !modelOpen) return;
+    if (!styleOpen) return;
     const onPointer = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (styleOpen && !styleRef.current?.contains(target)) setStyleOpen(false);
-      if (modelOpen && !modelRef.current?.contains(target)) setModelOpen(false);
+      if (!styleRef.current?.contains(event.target as Node)) setStyleOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setStyleOpen(false);
-      setModelOpen(false);
+      if (event.key === "Escape") setStyleOpen(false);
     };
     window.addEventListener("pointerdown", onPointer);
     window.addEventListener("keydown", onKey);
@@ -199,7 +194,7 @@ export function StudioDesk() {
       window.removeEventListener("pointerdown", onPointer);
       window.removeEventListener("keydown", onKey);
     };
-  }, [styleOpen, modelOpen]);
+  }, [styleOpen]);
 
   const providerBase = status.kind === "configured" ? status.baseUrl : "";
   useEffect(() => {
@@ -246,12 +241,8 @@ export function StudioDesk() {
   }
 
   async function chooseModel(modelId: string) {
-    setModelOpen(false);
-    if (status.kind !== "configured") {
-      patch({ modelId });
-      return;
-    }
-    if (modelId === status.model) return;
+    patch({ modelId });
+    if (status.kind !== "configured" || modelId === status.model) return;
     try {
       const response = await fetch("/api/provider", {
         method: "POST",
@@ -426,6 +417,7 @@ export function StudioDesk() {
       count: source.count,
       styles: source.styles,
     };
+    if (source.modelId && source.modelId !== "placeholder") payload.model = source.modelId;
     if (caps.negative && source.negative.trim()) payload.negativePrompt = source.negative.trim();
     if (caps.seed && source.seed.trim()) {
       const seed = Number(source.seed);
@@ -575,6 +567,11 @@ export function StudioDesk() {
     });
   }
 
+  const modelOptions =
+    status.kind === "configured"
+      ? Array.from(new Set([status.model, draft.modelId, ...providerModels].filter((id) => id && id !== "placeholder")))
+      : UI_MODELS.map((model) => model.id);
+  const modelValue = modelOptions.includes(draft.modelId) ? draft.modelId : modelOptions[0];
   const serviceLine = serviceCopy(status);
   const sampleLine = result
     ? "这张是刚生成的作品，不是示例。"
@@ -783,41 +780,20 @@ export function StudioDesk() {
                   <h3>02 / 画面设定</h3>
                 </div>
                 <div className="field-grid">
-                  <div className="field-card">
+                  <label className="field-card">
                     <span>模型</span>
-                    <div className="model-menu" ref={modelRef}>
-                      <button
-                        type="button"
-                        className="model-trigger"
-                        aria-haspopup="listbox"
-                        aria-expanded={modelOpen}
-                        aria-controls={modelMenuId}
-                        onClick={() => setModelOpen((open) => !open)}
-                      >
-                        <span>{modelLabel(status.kind === "configured" ? status.model : draft.modelId)}</span>
-                        <span aria-hidden="true">▾</span>
-                      </button>
-                      {modelOpen ? (
-                        <ul id={modelMenuId} role="listbox" aria-label="模型">
-                          {(status.kind === "configured"
-                            ? Array.from(new Set([status.model, ...providerModels]))
-                            : UI_MODELS.map((model) => model.id)
-                          ).map((modelId) => {
-                            const selected = modelId === (status.kind === "configured" ? status.model : draft.modelId);
-                            return (
-                              <li key={modelId} role="option" aria-selected={selected}>
-                                <button type="button" onClick={() => void chooseModel(modelId)}>
-                                  {selected ? "● " : "○ "}
-                                  {modelLabel(modelId)}
-                                </button>
-                              </li>
-                            );
-                          })}
-                          {modelsNote ? <li className="menu-note">{modelsNote}</li> : null}
-                        </ul>
-                      ) : null}
-                    </div>
-                  </div>
+                    <select
+                      aria-label="模型"
+                      value={modelValue}
+                      onChange={(event) => void chooseModel(event.target.value)}
+                    >
+                      {modelOptions.map((modelId) => (
+                        <option key={modelId} value={modelId}>
+                          {modelLabel(modelId)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label className="field-card">
                     <span>画幅</span>
                     <select value={draft.aspect} onChange={(event) => patch({ aspect: event.target.value as AspectId })}>
@@ -830,9 +806,9 @@ export function StudioDesk() {
                   </label>
                   <label className="field-card">
                     <span>数量</span>
-                    <select value={draft.count} onChange={(event) => patch({ count: Number(event.target.value) })}>
+                    <select aria-label="数量" value={String(draft.count)} onChange={(event) => patch({ count: Number(event.target.value) })}>
                       {activeCaps.counts.map((count) => (
-                        <option key={count} value={count}>
+                        <option key={count} value={String(count)}>
                           {count} 张
                         </option>
                       ))}
@@ -842,6 +818,7 @@ export function StudioDesk() {
                 {draft.modelId !== "placeholder" || status.kind === "configured" ? (
                   <p className="model-note">{activeCaps.note}</p>
                 ) : null}
+                {modelsNote ? <p className="field-error">{modelsNote}</p> : null}
                 <div className="style-row">
                   <span className="style-label">风格</span>
                   {draft.styles.map((style) => (
@@ -1110,7 +1087,11 @@ function modelLabel(id: string): string {
 }
 
 function capsFor(status: ServiceStatus, modelId: string): PublicCaps {
-  if (status.kind === "configured") return status.caps;
+  if (status.kind === "configured") {
+    const id = modelId && modelId !== "placeholder" ? modelId : status.model;
+    if (id === status.model) return status.caps;
+    return toPublicCaps(capsForModel(id, []), modelNote(id));
+  }
   const model = UI_MODELS.find((item) => item.id === modelId) ?? UI_MODELS[0];
   return toPublicCaps(model.caps, model.note);
 }

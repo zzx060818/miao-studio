@@ -157,7 +157,8 @@ export async function handleGenerate(input: unknown, deps: GenerateDeps): Promis
     };
   }
 
-  const caps = resolveConfigCaps(config);
+  const active = { ...config, model: parsed.value.model || config.model };
+  const caps = resolveConfigCaps(active);
   const unsupported = enforceCapabilities(parsed.value, caps);
   if (unsupported) {
     return { status: 400, body: { ok: false, code: "unsupported", error: unsupported } };
@@ -184,7 +185,7 @@ export async function handleGenerate(input: unknown, deps: GenerateDeps): Promis
 
   try {
     const images = await requestImages({
-      config,
+      config: active,
       caps,
       request: parsed.value,
       fetchImpl: deps.fetchImpl ?? fetch,
@@ -200,7 +201,7 @@ export async function handleGenerate(input: unknown, deps: GenerateDeps): Promis
         aspect: parsed.value.aspect,
         count: parsed.value.count,
         styles: parsed.value.styles,
-        model: config.model,
+        model: active.model,
       },
     };
   } catch (error) {
