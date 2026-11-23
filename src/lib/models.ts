@@ -150,7 +150,7 @@ const CONSERVATIVE: Caps = {
   steps: false,
   reference: false,
   counts: [1, 2, 3, 4],
-  sizes: { ...OPEN_SIZES },
+  sizes: { ...GPT_SIZES },
   referenceMimes: [],
   referenceMax: 0,
   squareOnly: false,
@@ -275,6 +275,6 @@ export function composePrompt(prompt: string, styles: StyleId[]): string {
 export function modelNote(model: string): string {
   return (
     UI_MODELS.find((item) => item.id === model)?.note ??
-    "未内置这个模型的官方尺寸。画幅会按比例换算成像素发给接口；排除内容、种子、步数、参考图需要服务器显式打开。"
+    "第三方模型按 1024 方图、1536×1024 横图或 1024×1536 竖图发送。接口直接返回的图片地址可以带签名参数。"
   );
 }

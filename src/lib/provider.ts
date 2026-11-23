@@ -16,6 +16,8 @@ import {
   assertProviderAddresses,
   endpointUrl,
   inspectProviderUrl,
+  inspectResultUrl,
+  isLocalProviderHost,
   resolvePublicHost,
 } from "./ssrf";
 import { fetchUpstream, upstreamFailureMessage } from "./upstream";
@@ -293,7 +295,7 @@ async function requestImages(args: {
   if (text.length > LIMITS.maxProviderJsonChars) throw new Error("生图服务的响应太大");
   if (!response.ok) {
     if (response.status === 404) {
-      throw new Error("生图接口返回 404。局域网地址末尾通常要带 /v1，例如 http://192.168.2.18:8000/v1");
+      throw new Error("生图接口返回 404。请确认地址以 /v1 结尾，并且所选模型支持文生图。");
     }
     throw new Error(readProviderError(text, response.status));
   }
@@ -304,23 +306,64 @@ async function requestImages(args: {
   } catch {
     throw new Error("生图服务没有返回 JSON");
   }
-  const data = (json as { data?: { b64_json?: string; url?: string }[] }).data;
-  if (!Array.isArray(data) || data.length === 0) throw new Error("生图服务没有返回图片");
+  const data = collectImages(json);
+  if (data.length === 0) throw new Error(emptyImageMessage(json));
   if (data.length > LIMITS.maxCount) throw new Error("生图服务返回的图片数量超出限制");
 
   const images: { mime: string; b64: string }[] = [];
   for (const item of data) {
-    if (item?.b64_json) {
-      images.push(imageFromBase64(item.b64_json));
+    if (item.b64) {
+      images.push(imageFromBase64(item.b64));
       continue;
     }
-    if (item?.url) {
+    if (item.url) {
       images.push(await downloadPublicImage(item.url, fetchImpl, lookup, signal));
       continue;
     }
     throw new Error("生图服务的图片字段无法读取");
   }
   return images;
+}
+
+function collectImages(json: unknown): { b64?: string; url?: string }[] {
+  const record = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+  if (!record) return [];
+  for (const key of ["data", "images", "output", "results"]) {
+    const list = record[key];
+    if (!Array.isArray(list)) continue;
+    const items = list.flatMap(readImageItem);
+    if (items.length > 0) return items;
+  }
+  return readImageItem(record);
+}
+
+function readImageItem(item: unknown): { b64?: string; url?: string }[] {
+  if (!item || typeof item !== "object") return [];
+  const row = item as Record<string, unknown>;
+  const b64 = firstString(row.b64_json, row.b64, row.base64, row.image_base64);
+  const url = firstString(row.url, row.image_url);
+  const image = firstString(row.image);
+  if (b64) return [{ b64, url }];
+  const candidate = url || image;
+  if (!candidate) return [];
+  if (candidate.startsWith("data:image/")) return [{ b64: candidate }];
+  if (/^https?:\/\//i.test(candidate)) return [{ url: candidate }];
+  if (candidate.length > 80 && !candidate.includes(" ")) return [{ b64: candidate }];
+  return [];
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function emptyImageMessage(json: unknown): string {
+  const record = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+  const task = firstString(record?.task_id, record?.taskId);
+  if (task) return "接口只返回了任务编号，没有直接返回图片。请换一个会马上返回图片的文生图模型。";
+  return "生图服务没有返回图片";
 }
 
 function appendExtra(form: FormData, request: GenerateRequest, caps: Caps) {
@@ -330,8 +373,9 @@ function appendExtra(form: FormData, request: GenerateRequest, caps: Caps) {
 }
 
 function imageFromBase64(data: string): { mime: string; b64: string } {
-  if (data.length > 12_000_000) throw new Error("返回的图片太大");
-  const bytes = Buffer.from(data, "base64");
+  const payload = data.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "");
+  if (payload.length > 12_000_000) throw new Error("返回的图片太大");
+  const bytes = Buffer.from(payload, "base64");
   if (bytes.length < 16 || bytes.length > LIMITS.maxResultBytes) throw new Error("返回的图片太大或是空的");
   const mime = sniffImage(new Uint8Array(bytes));
   if (!mime) throw new Error("生图服务返回的内容不是图片");
@@ -344,38 +388,55 @@ async function downloadPublicImage(
   lookup: (host: string) => Promise<string[]>,
   signal: AbortSignal,
 ): Promise<{ mime: string; b64: string }> {
-  const inspected = inspectProviderUrl(raw);
-  if (!inspected.ok) throw new Error("已拒绝下载非 https 或内网的结果图");
-  const addresses = await lookup(inspected.host);
-  const blocked = assertImageSource(inspected.host, addresses);
-  if (blocked) throw new Error(blocked);
-  const response = await fetchUpstream(
-    inspected.url.toString(),
-    {
-      method: "GET",
-      redirect: "manual",
-      signal,
-      cache: "no-store",
-      headers: { Accept: "image/png,image/jpeg,image/webp" },
-    },
-    fetchImpl,
-  );
-  if (response.type === "opaqueredirect" || response.status === 0 || (response.status >= 300 && response.status < 400)) {
-    throw new Error("结果图地址发生了重定向，已停止");
+  let current = raw;
+  let allowLocal = false;
+  const first = inspectResultUrl(current);
+  if (!first.ok) throw new Error(first.reason);
+  allowLocal = isLocalProviderHost(first.host);
+  for (let hop = 0; hop < 4; hop += 1) {
+    const inspected = inspectResultUrl(current);
+    if (!inspected.ok) throw new Error(inspected.reason);
+    const addresses = await lookup(inspected.host);
+    const blocked = assertImageSource(inspected.host, addresses, allowLocal);
+    if (blocked) throw new Error(blocked);
+    const response = await fetchUpstream(
+      inspected.url.toString(),
+      {
+        method: "GET",
+        redirect: "manual",
+        signal,
+        cache: "no-store",
+        headers: { Accept: "image/png,image/jpeg,image/webp" },
+      },
+      fetchImpl,
+    );
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) throw new Error("结果图地址发生了重定向，但没有下一跳");
+      current = new URL(location, inspected.url).toString();
+      continue;
+    }
+    if (!response.ok) throw new Error("结果图下载失败");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength < 16 || bytes.byteLength > LIMITS.maxResultBytes) throw new Error("结果图太大或是空的");
+    const mime = sniffImage(bytes);
+    if (!mime) throw new Error("结果图不是受支持的图片");
+    return { mime, b64: Buffer.from(bytes).toString("base64") };
   }
-  if (!response.ok) throw new Error("结果图下载失败");
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength < 16 || bytes.byteLength > LIMITS.maxResultBytes) throw new Error("结果图太大或是空的");
-  const mime = sniffImage(bytes);
-  if (!mime) throw new Error("结果图不是受支持的图片");
-  return { mime, b64: Buffer.from(bytes).toString("base64") };
+  throw new Error("结果图重定向次数过多");
 }
 
 function readProviderError(text: string, status: number): string {
   try {
-    const json = JSON.parse(text) as { error?: { message?: string } | string };
-    const message = typeof json.error === "string" ? json.error : json.error?.message;
-    if (message) return sanitizeProviderMessage(message);
+    const json = JSON.parse(text) as Record<string, unknown>;
+    const error = json.error;
+    const nested = error && typeof error === "object" ? (error as { message?: unknown }).message : undefined;
+    const message =
+      (typeof error === "string" ? error : "") ||
+      (typeof nested === "string" ? nested : "") ||
+      (typeof json.message === "string" ? json.message : "") ||
+      (typeof json.msg === "string" ? json.msg : "");
+    if (message.trim()) return sanitizeProviderMessage(message);
   } catch {
     // fall through to the status code
   }

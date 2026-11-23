@@ -8,31 +8,40 @@ export type UrlVerdict =
 const METADATA_HOSTS = new Set(["metadata", "metadata.google.internal"]);
 
 export function inspectProviderUrl(raw: string): UrlVerdict {
+  return inspectUrl(raw, { allowQuery: false, label: "生图服务地址" });
+}
+
+export function inspectResultUrl(raw: string): UrlVerdict {
+  return inspectUrl(raw, { allowQuery: true, label: "结果图地址" });
+}
+
+function inspectUrl(raw: string, options: { allowQuery: boolean; label: string }): UrlVerdict {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    return { ok: false, reason: "生图服务地址不是合法 URL" };
+    return { ok: false, reason: `${options.label}不是合法 URL` };
   }
   if (url.username || url.password) {
-    return { ok: false, reason: "生图服务地址不能带账号或密码" };
+    return { ok: false, reason: `${options.label}不能带账号或密码` };
   }
-  if (url.search || url.hash) {
-    return { ok: false, reason: "生图服务地址不能带查询参数或片段" };
+  if (!options.allowQuery && (url.search || url.hash)) {
+    return { ok: false, reason: `${options.label}不能带查询参数或片段` };
   }
+  url.hash = "";
   const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
-  if (!host) return { ok: false, reason: "生图服务地址缺少主机名" };
+  if (!host) return { ok: false, reason: `${options.label}缺少主机名` };
   if (isMetadataHost(host)) {
-    return { ok: false, reason: "生图服务地址指向了云元数据地址" };
+    return { ok: false, reason: `${options.label}指向了云元数据地址` };
   }
   const local = isLocalProviderHost(host);
   if (url.protocol === "http:") {
-    if (!local) return { ok: false, reason: "公网生图服务只接受 https 地址" };
+    if (!local) return { ok: false, reason: options.allowQuery ? "公网结果图只接受 https 地址" : "公网生图服务只接受 https 地址" };
   } else if (url.protocol !== "https:") {
-    return { ok: false, reason: "生图服务只接受 http 或 https 地址" };
+    return { ok: false, reason: options.allowQuery ? "结果图只接受 http 或 https 地址" : "生图服务只接受 http 或 https 地址" };
   }
   if (!local && isIP(host) === 0 && !host.includes(".")) {
-    return { ok: false, reason: "生图服务地址需要完整的公网域名" };
+    return { ok: false, reason: options.allowQuery ? "结果图地址需要完整的公网域名" : "生图服务地址需要完整的公网域名" };
   }
   return { ok: true, url, host };
 }
@@ -41,15 +50,16 @@ function isMetadataHost(host: string): boolean {
   return METADATA_HOSTS.has(host) || host.endsWith(".metadata.google.internal") || (isIP(host) !== 0 && isMetadataAddress(host));
 }
 
-function isLocalProviderHost(host: string): boolean {
+export function isLocalProviderHost(host: string): boolean {
   if (host === "localhost" || host === "localhost.localdomain" || host.endsWith(".localhost") || host.endsWith(".local")) {
     return true;
   }
   return isIP(host) !== 0 && isBlockedAddress(host) && !isMetadataAddress(host);
 }
 
-export function assertImageSource(host: string, addresses: string[]): string | null {
-  if (isLocalProviderHost(host)) return assertProviderAddresses(addresses);
+export function assertImageSource(host: string, addresses: string[], allowLocal = true): string | null {
+  if (!allowLocal && isLocalProviderHost(host)) return "结果图跳到了内网地址";
+  if (allowLocal && isLocalProviderHost(host)) return assertProviderAddresses(addresses);
   return assertResolvedAddresses(addresses);
 }
 

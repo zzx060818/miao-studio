@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertImageSource, assertProviderAddresses, assertResolvedAddresses, inspectProviderUrl, isBlockedAddress } from "./ssrf";
+import { assertImageSource, assertProviderAddresses, assertResolvedAddresses, inspectProviderUrl, inspectResultUrl, isBlockedAddress } from "./ssrf";
 
 describe("inspectProviderUrl", () => {
   it("accepts a public https origin", () => {
@@ -32,6 +32,16 @@ describe("inspectProviderUrl", () => {
     const verdict = inspectProviderUrl(raw);
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toContain(fragment);
+  });
+});
+
+describe("result image urls", () => {
+  it("accepts a signed public https url and still rejects a private redirect target", () => {
+    const signed = inspectResultUrl("https://cdn.example.com/a.png?sig=abc&exp=1");
+    expect(signed.ok).toBe(true);
+    expect(inspectProviderUrl("https://cdn.example.com/a.png?sig=abc").ok).toBe(false);
+    expect(assertImageSource("127.0.0.1", ["127.0.0.1"], false)).toMatch(/内网/);
+    expect(assertImageSource("cdn.example.com", ["8.8.8.8"], false)).toBeNull();
   });
 });
 

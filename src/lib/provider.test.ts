@@ -148,6 +148,29 @@ describe("provider safety", () => {
     expect(String(fetchImpl.mock.calls[0]?.[0])).toBe("https://api.example.com/v1/images/generations");
   });
 
+  it("downloads a signed image url and follows one public redirect", async () => {
+    const png = Buffer.from(PNG, "base64");
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const href = String(url);
+      if (href.includes("/images/generations")) {
+        return Response.json({ data: [{ url: "https://cdn.example.com/a.png?sig=secret" }] });
+      }
+      if (href.includes("sig=secret")) {
+        return new Response(null, { status: 302, headers: { location: "https://cdn.example.com/final.png" } });
+      }
+      return new Response(png, { status: 200, headers: { "content-type": "image/png" } });
+    });
+    const result = await handleGenerate(valid, {
+      env: configured(),
+      buckets: buckets(),
+      fetchImpl,
+      lookup: async () => ["8.8.8.8"],
+    });
+    expect(result.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(JSON.stringify(result.body)).not.toContain("sig=secret");
+  });
+
   it("downloads a returned image url without sending the api key", async () => {
     const png = Buffer.from(PNG, "base64");
     const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
