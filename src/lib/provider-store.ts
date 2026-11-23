@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 import { dirname, join } from "node:path";
 import type { EnvLike } from "./provider";
 import { assertProviderAddresses, endpointUrl, inspectProviderUrl, isBlockedAddress, resolvePublicHost } from "./ssrf";
+import { fetchUpstream, upstreamFailureMessage } from "./upstream";
 
 export type SavedProvider = {
   baseUrl: string;
@@ -127,14 +128,19 @@ export async function listProviderModels(
   const fetchImpl = deps.fetchImpl ?? fetch;
   let response: Response;
   try {
-    response = await fetchImpl(url, {
-      method: "GET",
-      redirect: "manual",
-      signal,
-      headers: { Authorization: `Bearer ${input.apiKey}`, Accept: "application/json" },
-    });
-  } catch {
-    return { ok: false, error: "没有连上模型列表接口" };
+    response = await fetchUpstream(
+      url,
+      {
+        method: "GET",
+        redirect: "manual",
+        signal,
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${input.apiKey}`, Accept: "application/json" },
+      },
+      fetchImpl,
+    );
+  } catch (error) {
+    return { ok: false, error: upstreamFailureMessage(error, url) };
   }
   if (response.type === "opaqueredirect" || response.status === 0 || (response.status >= 300 && response.status < 400)) {
     return { ok: false, error: "模型列表接口返回了重定向" };

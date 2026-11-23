@@ -30,18 +30,44 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, code: "invalid", error: parsed.error }, { status: parsed.status });
   }
   const saved = await readSavedProvider();
-  const result = await handleGenerate(parsed.value, {
-    env: mergeProviderEnv(process.env, saved),
-    ip: clientIp(request.headers),
-    buckets,
-    signal: request.signal,
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const beat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(" "));
+        } catch {
+          clearInterval(beat);
+        }
+      }, 4000);
+      try {
+        const result = await handleGenerate(parsed.value, {
+          env: mergeProviderEnv(process.env, saved),
+          ip: clientIp(request.headers),
+          buckets,
+          signal: request.signal,
+        });
+        const model = typeof result.body.model === "string" ? result.body.model : sketch.model;
+        const error = result.body.ok === true ? "" : textOf(result.body.error) || textOf(result.body.detail);
+        await remember(actor, { ...sketch, model }, { ok: result.body.ok === true, status: result.status, error });
+        controller.enqueue(encoder.encode(JSON.stringify(result.body)));
+        controller.close();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "没有生成图片";
+        await remember(actor, sketch, { ok: false, status: 500, error: message });
+        controller.enqueue(encoder.encode(JSON.stringify({ ok: false, error: "没有生成图片", detail: message })));
+        controller.close();
+      } finally {
+        clearInterval(beat);
+      }
+    },
   });
-  const model = typeof result.body.model === "string" ? result.body.model : sketch.model;
-  const error = result.body.ok === true ? "" : textOf(result.body.error) || textOf(result.body.detail);
-  await remember(actor, { ...sketch, model }, { ok: result.body.ok === true, status: result.status, error });
-  return Response.json(result.body, {
-    status: result.status,
-    headers: { "Cache-Control": "no-store" },
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Accel-Buffering": "no",
+    },
   });
 }
 

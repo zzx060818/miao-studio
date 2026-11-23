@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     manager && typeof record.baseUrl === "string" && record.baseUrl.trim() ? record.baseUrl.trim() : (saved?.baseUrl ?? "");
   const apiKey =
     manager && typeof record.apiKey === "string" && record.apiKey.trim() ? record.apiKey.trim() : (saved?.apiKey ?? "");
-  const listed = await listProviderModels({ baseUrl, apiKey }, { signal: request.signal });
+  const listed = await listProviderModels({ baseUrl, apiKey });
   if (!listed.ok) {
     return Response.json({ ok: false, error: listed.error }, { status: 502, headers });
   }

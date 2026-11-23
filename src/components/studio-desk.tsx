@@ -478,7 +478,7 @@ export function StudioDesk() {
         setAction({
           tone: "error",
           title: "服务器中途断开了",
-          detail: "出图完成前连接断了，这次没有新图片。开发服务器默认只等 30 秒，请拉取代码后重新运行 npm run dev。",
+          detail: "出图完成前连接断了，这次没有新图片。请重新运行一次 npm run dev，再用局域网地址打开。",
         });
         return;
       }
@@ -548,7 +548,7 @@ export function StudioDesk() {
       setAction({
         tone: "error",
         title: "没有连上服务器",
-        detail: "出图还没返回，连接就被断开了，这次没有新图片。请拉取代码后重新运行 npm run dev。",
+        detail: "出图还没返回，连接就被断开了，这次没有新图片。请重新运行一次 npm run dev。生图服务如果就在这台电脑上，渠道请填 http://127.0.0.1:端口/v1。",
       });
     } finally {
       busyRef.current = false;

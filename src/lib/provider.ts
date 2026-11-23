@@ -18,6 +18,7 @@ import {
   inspectProviderUrl,
   resolvePublicHost,
 } from "./ssrf";
+import { fetchUpstream, upstreamFailureMessage } from "./upstream";
 import {
   type GenerateRequest,
   enforceCapabilities,
@@ -279,7 +280,7 @@ async function requestImages(args: {
 
   let response: Response;
   try {
-    response = await fetchImpl(url, { method: "POST", headers, body, redirect: "manual", signal });
+    response = await fetchUpstream(url, { method: "POST", headers, body, redirect: "manual", signal, cache: "no-store" }, fetchImpl);
   } catch (error) {
     const kind = failureKind(error);
     if (kind === "cancel" || kind === "timeout") throw error;
@@ -348,12 +349,17 @@ async function downloadPublicImage(
   const addresses = await lookup(inspected.host);
   const blocked = assertImageSource(inspected.host, addresses);
   if (blocked) throw new Error(blocked);
-  const response = await fetchImpl(inspected.url.toString(), {
-    method: "GET",
-    redirect: "manual",
-    signal,
-    headers: { Accept: "image/png,image/jpeg,image/webp" },
-  });
+  const response = await fetchUpstream(
+    inspected.url.toString(),
+    {
+      method: "GET",
+      redirect: "manual",
+      signal,
+      cache: "no-store",
+      headers: { Accept: "image/png,image/jpeg,image/webp" },
+    },
+    fetchImpl,
+  );
   if (response.type === "opaqueredirect" || response.status === 0 || (response.status >= 300 && response.status < 400)) {
     throw new Error("结果图地址发生了重定向，已停止");
   }
@@ -390,42 +396,7 @@ function failureKind(error: unknown): "cancel" | "timeout" | "other" {
 }
 
 function describeFetchError(error: unknown, url?: string): string {
-  const code = causeCode(error);
-  const where = url ? `（${safeHost(url)}）` : "";
-  if (code === "ECONNREFUSED") return `连不上生图服务${where}。请核对 IP 和端口，例如 http://192.168.2.18:8000/v1`;
-  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return `找不到生图服务的主机${where}`;
-  if (code === "EHOSTUNREACH" || code === "ENETUNREACH" || code === "ECONNRESET") return `到生图服务的网络中断了${where}`;
-  if (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT" || code === "UND_ERR_HEADERS_TIMEOUT") {
-    return `连接生图服务超时${where}`;
-  }
-  if (error instanceof Error && error.message && error.message !== "fetch failed") return error.message;
-  const cause = error instanceof Error ? error.cause : undefined;
-  if (cause instanceof Error && cause.message) return cause.message;
-  return "没有连上生图服务";
-}
-
-function causeCode(error: unknown): string {
-  const cause = error instanceof Error ? error.cause : undefined;
-  if (!cause || typeof cause !== "object") return "";
-  const code = (cause as { code?: unknown }).code;
-  if (typeof code === "string") return code;
-  const nested = (cause as { errors?: unknown }).errors;
-  if (Array.isArray(nested)) {
-    for (const item of nested) {
-      const found = causeCode(item instanceof Error ? item : Object.assign(new Error("nested"), { cause: item }));
-      if (found) return found;
-    }
-  }
-  return "";
-}
-
-function safeHost(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.protocol}//${parsed.host}`;
-  } catch {
-    return "";
-  }
+  return upstreamFailureMessage(error, url);
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
