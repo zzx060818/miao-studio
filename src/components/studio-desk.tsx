@@ -39,7 +39,7 @@ import { readReferenceFile } from "@/lib/read-image";
 type ServiceStatus =
   | { kind: "loading" }
   | { kind: "unconfigured"; detail: string; editable: boolean }
-  | { kind: "configured"; model: string; detail: string; caps: PublicCaps; editable: boolean; baseUrl: string }
+  | { kind: "configured"; model: string; detail: string; caps: PublicCaps; extras: string[]; editable: boolean; baseUrl: string }
   | { kind: "unknown" };
 
 type ActionNote = { tone: "info" | "error"; title: string; detail?: string } | null;
@@ -128,36 +128,36 @@ export function StudioDesk() {
     writeDraft(draft);
   }, [draft, hydrated]);
 
-  const loadStatus = useCallback((alive: { current: boolean } = { current: true }) => {
-    fetch("/api/provider", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((json: { configured?: boolean; editable?: boolean; model?: string; detail?: string; baseUrl?: string; capabilities?: PublicCaps }) => {
-        if (!alive.current) return;
-        if (json.configured && json.model && json.capabilities) {
-          setStatus({
-            kind: "configured",
-            model: json.model,
-            detail: json.detail ?? "生图服务已配置。",
-            caps: json.capabilities,
-            editable: json.editable === true,
-            baseUrl: json.baseUrl ?? "",
-          });
-          setDraft((current) => {
-            if (!json.model || (current.modelId && current.modelId !== "placeholder")) return current;
-            if (current.modelId === json.model) return current;
-            return { ...current, modelId: json.model };
-          });
-          return;
-        }
+  const loadStatus = useCallback(async (alive: { current: boolean } = { current: true }) => {
+    try {
+      const response = await fetch("/api/provider", { cache: "no-store" });
+      const json = (await response.json()) as { configured?: boolean; editable?: boolean; model?: string; detail?: string; baseUrl?: string; capabilities?: PublicCaps; extras?: string[] };
+      if (!alive.current) return;
+      if (json.configured && json.model && json.capabilities) {
         setStatus({
-          kind: "unconfigured",
+          kind: "configured",
+          model: json.model,
+          detail: json.detail ?? "生图服务已配置。",
+          caps: json.capabilities,
+          extras: json.extras ?? [],
           editable: json.editable === true,
-          detail: json.detail ?? "服务器还没有配置生图服务。",
+          baseUrl: json.baseUrl ?? "",
         });
-      })
-      .catch(() => {
-        if (alive.current) setStatus({ kind: "unknown" });
+        setDraft((current) => {
+          if (!json.model || (current.modelId && current.modelId !== "placeholder")) return current;
+          if (current.modelId === json.model) return current;
+          return { ...current, modelId: json.model };
+        });
+        return;
+      }
+      setStatus({
+        kind: "unconfigured",
+        editable: json.editable === true,
+        detail: json.detail ?? "服务器还没有配置生图服务。",
       });
+    } catch {
+      if (alive.current) setStatus({ kind: "unknown" });
+    }
   }, []);
 
   useEffect(() => {
@@ -419,6 +419,10 @@ export function StudioDesk() {
       return;
     }
     const caps = capsFor(status, source.modelId);
+    if (refs.length > 0 && !caps.reference) {
+      setAction({ tone: "error", title: "当前模型不支持参考图", detail: "请切换到支持参考图的模型，或移除参考图后生成。" });
+      return;
+    }
     if (caps.reference) {
       if (refs.length > caps.referenceMax) {
         setAction({ tone: "error", title: `当前模型最多接受 ${caps.referenceMax} 张参考图` });
@@ -454,7 +458,7 @@ export function StudioDesk() {
       }
       payload.steps = steps;
     }
-    if (caps.reference && refs.length > 0) {
+    if (refs.length > 0) {
       payload.references = refs.map((item) => ({ mime: item.mime, data: item.data }));
     }
 
@@ -853,7 +857,9 @@ export function StudioDesk() {
                 </div>
                 {refError ? <p className="field-error" role="alert">{refError}</p> : null}
                 {!activeCaps.reference && refs.length > 0 ? (
-                  <p className="field-error">参考图先留在这张纸上。当前模型不会把它们交给生图服务。</p>
+                  <p className="field-error">当前模型不支持参考图，请切换模型或移除参考图后生成。</p>
+                ) : activeCaps.reference && refs.length > 0 ? (
+                  <p className="model-note">将使用 {refs.length} 张参考图生成。</p>
                 ) : null}
 
                 <div className="section-head tight">
@@ -1185,7 +1191,7 @@ function capsFor(status: ServiceStatus, modelId: string): PublicCaps {
   if (status.kind === "configured") {
     const id = modelId && modelId !== "placeholder" ? modelId : status.model;
     if (id === status.model) return status.caps;
-    return toPublicCaps(capsForModel(id, []), modelNote(id));
+    return toPublicCaps(capsForModel(id, status.extras), modelNote(id));
   }
   const model = UI_MODELS.find((item) => item.id === modelId) ?? UI_MODELS[0];
   return toPublicCaps(model.caps, model.note);

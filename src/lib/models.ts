@@ -156,8 +156,22 @@ const CONSERVATIVE: Caps = {
   squareOnly: false,
 };
 
+const GPT_IMAGE_2_MODELS = [
+  "gpt-image-2",
+  "gpt-image-2.5",
+  "gpt-image-2.5-flare",
+  "gpt-image-2.5-sunburst",
+  "gpt-image-2.6",
+  "gpt-image-2.6-flare",
+  "gpt-image-2.6-sunburst",
+];
+
 const KNOWN: Record<string, Caps> = {
   "gpt-image-1": GPT_IMAGE_CAPS,
+  ...Object.fromEntries(GPT_IMAGE_2_MODELS.map((id) => [id, {
+    ...GPT_IMAGE_CAPS,
+    referenceMimes: ["image/png", "image/jpeg", "image/webp"],
+  }])),
   "dall-e-3": DALLE3_CAPS,
   "dall-e-2": DALLE2_CAPS,
 };
@@ -176,6 +190,12 @@ export const UI_MODELS: UiModel[] = [
     note: "界面占位。服务未配置时，这个选项不会出图。",
     caps: PLACEHOLDER_CAPS,
   },
+  ...GPT_IMAGE_2_MODELS.map((id) => ({
+    id,
+    label: id,
+    note: "支持 PNG、JPEG、WebP 参考图，本站最多发送 4 张。渠道需支持图片编辑接口。",
+    caps: KNOWN[id],
+  })),
   {
     id: "gpt-image-1",
     label: "GPT Image",

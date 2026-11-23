@@ -113,6 +113,7 @@ export function publicStatus(env: EnvLike, options?: { editable?: boolean }): Re
     message: "生图服务已配置",
     model: config.model,
     capabilities: caps,
+    extras: config.extras,
     detail: "密钥只留在这台服务器上。风格会写进提示词，不是供应商的独立参数。",
     baseUrl: config.baseUrl,
   };
@@ -261,8 +262,8 @@ async function requestImages(args: {
     if (config.model === "dall-e-2" || config.model === "dall-e-3") form.set("response_format", "b64_json");
     appendExtra(form, request, caps);
     for (const [index, ref] of request.references.entries()) {
-      const extension = ref.mime === "image/png" ? "png" : "jpg";
-      form.append("image", new Blob([toArrayBuffer(ref.bytes)], { type: ref.mime }), `ref-${index}.${extension}`);
+      const extension = ref.mime === "image/png" ? "png" : ref.mime === "image/webp" ? "webp" : "jpg";
+      form.append(request.references.length > 1 ? "image[]" : "image", new Blob([toArrayBuffer(ref.bytes)], { type: ref.mime }), `ref-${index}.${extension}`);
     }
     body = form;
   } else {

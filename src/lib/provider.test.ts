@@ -4,6 +4,7 @@ import type { Buckets } from "./rate-limit";
 
 const SECRET = "sk-test-secret-value";
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+const WEBP = "UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA";
 
 const valid = {
   prompt: "海边的旧铁路",
@@ -57,6 +58,101 @@ describe("provider state", () => {
     const missing = publicStatus({});
     expect(missing.configured).toBe(false);
     expect(missing.message).toBe("尚未配置生图服务");
+  });
+
+  it("reports reference support for Flare and shares explicit capability overrides", () => {
+    const status = publicStatus(configured({ IMAGE_API_MODEL: "gpt-image-2.6-flare", IMAGE_API_CAPABILITIES: "reference" }));
+    expect(status.capabilities).toMatchObject({ reference: true, referenceMimes: ["image/png", "image/jpeg", "image/webp"] });
+    expect(status.extras).toEqual(["reference"]);
+    expect(JSON.stringify(status)).not.toContain(SECRET);
+  });
+});
+
+describe("reference image forwarding", () => {
+  it.each([
+    ["image/png", PNG, "png"],
+    ["image/webp", WEBP, "webp"],
+  ])("sends a %s reference to the selected Flare model", async (mime, data, extension) => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe("https://api.example.com/v1/images/edits");
+      const form = init?.body as FormData;
+      expect(form).toBeInstanceOf(FormData);
+      expect(form.get("model")).toBe("gpt-image-2.6-flare");
+      expect(form.get("prompt")).toContain(valid.prompt);
+      expect(form.get("size")).toBe("1536x1024");
+      expect(form.get("n")).toBe("1");
+      const image = form.get("image") as File;
+      expect(image.type).toBe(mime);
+      expect(image.name).toBe(`ref-0.${extension}`);
+      expect(Buffer.from(await image.arrayBuffer())).toEqual(Buffer.from(data, "base64"));
+      expect(new Headers(init?.headers).has("content-type")).toBe(false);
+      return Response.json({ data: [{ b64_json: PNG }] });
+    });
+    const result = await handleGenerate(
+      { ...valid, model: "gpt-image-2.6-flare", references: [{ mime, data }] },
+      { env: configured(), buckets: buckets(), fetchImpl, lookup: async () => ["8.8.8.8"] },
+    );
+    expect(result.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    "gpt-image-2",
+    "gpt-image-2.5",
+    "gpt-image-2.5-flare",
+    "gpt-image-2.5-sunburst",
+    "gpt-image-2.6",
+    "gpt-image-2.6-flare",
+    "gpt-image-2.6-sunburst",
+  ])("forwards a reference when the page selects %s", async (model) => {
+    const status = publicStatus(configured({ IMAGE_API_MODEL: model }));
+    expect(status.capabilities).toMatchObject({ reference: true });
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe("https://api.example.com/v1/images/edits");
+      const form = init?.body as FormData;
+      expect(form.get("model")).toBe(model);
+      const image = form.get("image") as File;
+      expect(Buffer.from(await image.arrayBuffer())).toEqual(Buffer.from(PNG, "base64"));
+      return Response.json({ data: [{ b64_json: PNG }] });
+    });
+    const result = await handleGenerate(
+      { ...valid, model, references: [{ mime: "image/png", data: PNG }] },
+      { env: configured(), buckets: buckets(), fetchImpl, lookup: async () => ["8.8.8.8"] },
+    );
+    expect(result.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends every reference in order using the multipart array field", async () => {
+    const references = [{ mime: "image/png", data: PNG }, { mime: "image/webp", data: WEBP }];
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toContain("/images/edits");
+      const form = init?.body as FormData;
+      expect(form.has("image")).toBe(false);
+      const images = form.getAll("image[]") as File[];
+      expect(images).toHaveLength(2);
+      for (const [index, image] of images.entries()) {
+        expect(image.type).toBe(references[index].mime);
+        expect(Buffer.from(await image.arrayBuffer())).toEqual(Buffer.from(references[index].data, "base64"));
+      }
+      return Response.json({ data: [{ b64_json: PNG }] });
+    });
+    const result = await handleGenerate(
+      { ...valid, model: "gpt-image-2.6-flare", references },
+      { env: configured(), buckets: buckets(), fetchImpl, lookup: async () => ["8.8.8.8"] },
+    );
+    expect(result.status).toBe(200);
+  });
+
+  it.each(["dall-e-3", "unknown-model"])("rejects references for %s instead of generating without them", async (model) => {
+    const fetchImpl = vi.fn();
+    const result = await handleGenerate(
+      { ...valid, model, references: [{ mime: "image/png", data: PNG }] },
+      { env: configured(), buckets: buckets(), fetchImpl },
+    );
+    expect(result.status).toBe(400);
+    expect(result.body.error).toBe("当前模型不支持参考图");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 
