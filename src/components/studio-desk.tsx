@@ -337,7 +337,7 @@ export function StudioDesk() {
         continue;
       }
       next.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: loaded.value.name,
         mime: loaded.value.mime,
         data: loaded.value.data,
@@ -366,7 +366,7 @@ export function StudioDesk() {
     try {
       const title = text.split("\n")[0]?.trim() || "未命名";
       const outcome = await savePrompt({
-        id: crypto.randomUUID(),
+        id: createId(),
         createdAt: Date.now(),
         title: [...title].slice(0, 18).join(""),
         text,
@@ -464,13 +464,25 @@ export function StudioDesk() {
     setBusy(true);
     setAction({ tone: "info", title: "正在请求生图服务", detail: "完成之前不会出现新图片。" });
     try {
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-      const text = await response.text();
+      let response: Response;
+      let text: string;
+      try {
+        response = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        text = await response.text();
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        setAction({
+          tone: "error",
+          title: "没有连上服务器",
+          detail: "生成请求未能完成，请检查网络和服务器运行状态。若已提交到生图服务，可先查看调用记录确认结果。",
+        });
+        return;
+      }
       let json: GenerateResponse;
       try {
         json = JSON.parse(text) as GenerateResponse;
@@ -499,7 +511,7 @@ export function StudioDesk() {
         setAction({ tone: "error", title: "服务没有返回可用的图片" });
         return;
       }
-      const workId = crypto.randomUUID();
+      const workId = createId();
       const view: ResultView = {
         workId,
         title: shortTitle(prompt),
@@ -547,8 +559,8 @@ export function StudioDesk() {
       }
       setAction({
         tone: "error",
-        title: "没有连上服务器",
-        detail: "出图还没返回，连接就被断开了，这次没有新图片。请重新运行一次 npm run dev。生图服务如果就在这台电脑上，渠道请填 http://127.0.0.1:端口/v1。",
+        title: "没能处理生成结果",
+        detail: error instanceof Error ? error.message : "处理图片时出现异常，请重试。",
       });
     } finally {
       busyRef.current = false;
@@ -1154,6 +1166,15 @@ function WorkThumb({ blob }: { blob: Blob }) {
   }, [blob]);
   if (!url) return null;
   return <img src={url} alt="" />;
+}
+
+function createId(): string {
+  // getRandomValues also works on HTTP LAN pages, where randomUUID is unavailable.
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function modelLabel(id: string): string {
