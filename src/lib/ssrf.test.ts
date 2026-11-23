@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertProviderAddresses, assertResolvedAddresses, inspectProviderUrl, isBlockedAddress } from "./ssrf";
+import { assertImageSource, assertProviderAddresses, assertResolvedAddresses, inspectProviderUrl, isBlockedAddress } from "./ssrf";
 
 describe("inspectProviderUrl", () => {
   it("accepts a public https origin", () => {
@@ -13,6 +13,8 @@ describe("inspectProviderUrl", () => {
     ["https://192.168.0.8:8080/v1"],
     ["https://localhost/v1"],
     ["http://192.168.1.8:8000/v1"],
+    ["http://192.168.2.18/"],
+    ["http://192.168.2.18"],
     ["http://127.0.0.1:7860/v1"],
   ])("accepts a local provider %s", (raw) => {
     expect(inspectProviderUrl(raw).ok).toBe(true);
@@ -52,6 +54,13 @@ describe("address blocking", () => {
     expect(assertResolvedAddresses(["8.8.8.8"])).toBeNull();
     expect(assertResolvedAddresses(["127.0.0.1"])).toMatch(/内网|保留/);
     expect(assertResolvedAddresses([])).toMatch(/没有解析/);
+  });
+
+  it("downloads a result image from the same LAN address and still refuses a public name that points inward", () => {
+    expect(assertImageSource("192.168.2.18", ["192.168.2.18"])).toBeNull();
+    expect(assertImageSource("localhost", ["127.0.0.1"])).toBeNull();
+    expect(assertImageSource("api.example.com", ["192.168.2.18"])).toMatch(/内网|保留/);
+    expect(assertImageSource("192.168.2.18", ["169.254.169.254"])).toMatch(/元数据|链路/);
   });
 
   it("allows a configured provider on a private network and still blocks metadata", () => {

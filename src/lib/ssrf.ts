@@ -48,6 +48,11 @@ function isLocalProviderHost(host: string): boolean {
   return isIP(host) !== 0 && isBlockedAddress(host) && !isMetadataAddress(host);
 }
 
+export function assertImageSource(host: string, addresses: string[]): string | null {
+  if (isLocalProviderHost(host)) return assertProviderAddresses(addresses);
+  return assertResolvedAddresses(addresses);
+}
+
 export function assertResolvedAddresses(addresses: string[]): string | null {
   if (addresses.length === 0) return "生图服务地址没有解析出任何 IP";
   for (const address of addresses) {

@@ -12,8 +12,8 @@ import type { Buckets } from "./rate-limit";
 import { takeToken } from "./rate-limit";
 import { sniffImage } from "./sniff";
 import {
+  assertImageSource,
   assertProviderAddresses,
-  assertResolvedAddresses,
   endpointUrl,
   inspectProviderUrl,
   resolvePublicHost,
@@ -323,7 +323,7 @@ async function downloadPublicImage(
   const inspected = inspectProviderUrl(raw);
   if (!inspected.ok) throw new Error("已拒绝下载非 https 或内网的结果图");
   const addresses = await lookup(inspected.host);
-  const blocked = assertResolvedAddresses(addresses);
+  const blocked = assertImageSource(inspected.host, addresses);
   if (blocked) throw new Error(blocked);
   const response = await fetchImpl(inspected.url.toString(), {
     method: "GET",

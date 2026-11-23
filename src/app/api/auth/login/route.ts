@@ -1,6 +1,6 @@
 import { clientIp } from "@/lib/validation";
 import { takeToken } from "@/lib/rate-limit";
-import { issueSession, sessionCookie, sessionSecret } from "@/lib/session";
+import { connectionIsHttps, issueSession, sessionCookie, sessionSecret } from "@/lib/session";
 import { authenticate } from "@/lib/users";
 
 export const runtime = "nodejs";
@@ -28,6 +28,6 @@ export async function POST(request: Request) {
   const token = issueSession(result.user.id, await sessionSecret());
   return Response.json(
     { ok: true, user: result.user },
-    { status: 200, headers: { ...headers, "Set-Cookie": sessionCookie(token) } },
+    { status: 200, headers: { ...headers, "Set-Cookie": sessionCookie(token, connectionIsHttps(request)) } },
   );
 }

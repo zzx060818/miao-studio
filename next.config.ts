@@ -3,7 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Cursor's in-app preview loads the dev server from a forwarded host.
-  allowedDevOrigins: ["127.0.0.1", "localhost"],
+  allowedDevOrigins: [
+    "127.0.0.1",
+    "localhost",
+    "192.168.*.*",
+    "10.*.*.*",
+    ...Array.from({ length: 16 }, (_, index) => `172.${16 + index}.*.*`),
+  ],
   async headers() {
     const headers = [
       { key: "X-Content-Type-Options", value: "nosniff" },
